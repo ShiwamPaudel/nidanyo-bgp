@@ -179,10 +179,10 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
               <table className="w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="border-b border-[#0E1B14]/15 text-left text-[#647067]">
-                    <th className="w-[40%] py-1">Investigation</th>
+                    <th className="w-[38%] py-1">Investigation</th>
                     <th className="w-[20%] py-1">Result</th>
-                    <th className="w-[15%] py-1">Unit</th>
-                    <th className="w-[25%] py-1">Reference</th>
+                    <th className="w-[14%] py-1">Unit</th>
+                    <th className="w-[28%] py-1">Reference Range</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -228,35 +228,35 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
         ** End of report ** · Flags: L Low · H High · LL/HH Critical. Please correlate clinically.
       </p>
 
-      {/* Verification QR + admin-managed signatories (end of report) */}
-      <div className="mt-6 flex items-end justify-between gap-4 break-inside-avoid">
-        <div className="text-[10px]">
-          {qrDataUrl && (
-            <div className="flex items-center gap-2">
+      {/* Verification QR */}
+      {qrDataUrl && (
+        <div className="mt-6 break-inside-avoid text-[10px]">
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrDataUrl} alt="Verify" className="size-16" />
+            <div>
+              <p className="font-semibold text-brand-700">Scan to verify</p>
+              {publicUrl && <p className="break-all text-info">{publicUrl}</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-managed signatories — a single horizontal row, evenly spaced. */}
+      {signatories.length > 0 && (
+        <div className="mt-8 flex items-end justify-around gap-6 break-inside-avoid">
+          {signatories.map((s) => (
+            <div key={s.id} className="text-center text-[11px]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrDataUrl} alt="Verify" className="size-16" />
-              <div>
-                <p className="font-semibold text-brand-700">Scan to verify</p>
-                {publicUrl && <p className="break-all text-info">{publicUrl}</p>}
+              <img src={s.url} alt="" className="mx-auto mb-1 h-12 object-contain" />
+              <div className="border-t border-[#0E1B14] px-6 pt-1">
+                <p className="font-semibold">{s.name}</p>
+                {s.description && <p className="text-[10px] text-[#647067]">{s.description}</p>}
               </div>
             </div>
-          )}
+          ))}
         </div>
-        {signatories.length > 0 && (
-          <div className="flex flex-wrap items-end justify-end gap-x-8 gap-y-4">
-            {signatories.map((s) => (
-              <div key={s.id} className="text-center text-[11px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={s.url} alt="" className="mx-auto mb-1 h-12 object-contain" />
-                <div className="border-t border-[#0E1B14] px-6 pt-1">
-                  <p className="font-semibold">{s.name}</p>
-                  {s.description && <p className="text-[10px] text-[#647067]">{s.description}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </>
   );
 }

@@ -33,7 +33,6 @@ export async function approveVisit(input: { visitId: string; interpretation?: st
           approvedByName: user.name,
           approvedByDesignation: user.designation ?? null,
           approvedAt: now,
-          signatureAssetId: user.signatureAssetId ?? null,
           interpretation: input.interpretation ?? e.interpretation ?? null,
           correctionNote: null,
         })
@@ -46,7 +45,6 @@ export async function approveVisit(input: { visitId: string; interpretation?: st
         actorId: user.id,
         actorName: user.name,
         actorDesignation: user.designation ?? null,
-        signatureAssetId: user.signatureAssetId ?? null,
       });
     }
 

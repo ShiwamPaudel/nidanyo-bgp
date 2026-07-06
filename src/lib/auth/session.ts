@@ -32,7 +32,6 @@ export interface SessionUser {
   roleName: string;
   designation: string | null;
   permissions: PermissionKey[];
-  signatureAssetId: string | null;
 }
 
 /** Create a server-side session row + signed cookie. */
@@ -116,7 +115,6 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       roleName: role?.name ?? user.roleKey,
       designation: user.designation ?? null,
       permissions: (role?.permissions ?? []) as PermissionKey[],
-      signatureAssetId: user.signatureAssetId ?? null,
     };
   } catch {
     return null;

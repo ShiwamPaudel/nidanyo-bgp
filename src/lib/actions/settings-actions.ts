@@ -55,14 +55,13 @@ export async function updateLabProfile(input: LabProfileInput): Promise<ActionRe
   });
 }
 
-/** Upload a lab asset (header/footer/logo/signature) via the storage adapter. */
+/** Upload a lab asset (report/bill header/footer or logo) via the storage adapter. */
 export async function uploadLabAsset(formData: FormData): Promise<ActionResult<{ url: string }>> {
   return run(async () => {
     const user = await authorize(PERMISSIONS.SETTINGS_MANAGE);
     const kind = String(formData.get("kind") || "");
-    const ownerUserId = (formData.get("ownerUserId") as string) || null;
     const file = formData.get("file") as File | null;
-    const allowed = ["report_header", "report_footer", "bill_header", "bill_footer", "logo", "signature"];
+    const allowed = ["report_header", "report_footer", "bill_header", "bill_footer", "logo"];
     if (!allowed.includes(kind)) return fail("Invalid asset type.");
     if (!file || file.size === 0) return fail("Please choose a file to upload.");
     if (file.size > 5 * 1024 * 1024) return fail("File is too large (max 5 MB).");
@@ -71,21 +70,12 @@ export async function uploadLabAsset(formData: FormData): Promise<ActionResult<{
     const buf = Buffer.from(await file.arrayBuffer());
     const stored = await storage.put({ data: buf, filename: file.name, contentType: file.type, folder: `${user.labId}/${kind}` });
 
-    // For single-instance kinds, deactivate previous active ones.
-    if (kind !== "signature") {
-      await db.update(labAssets).set({ isActive: false }).where(and(eq(labAssets.labId, user.labId), eq(labAssets.kind, kind as never)));
-    }
-    await db.insert(labAssets).values({ labId: user.labId, kind: kind as never, ownerUserId, storageKey: stored.key, url: stored.url, mimeType: file.type, isActive: true, createdBy: user.id });
-
-    // If a signature uploaded for a user, link it.
-    if (kind === "signature" && ownerUserId) {
-      const asset = (await db.select().from(labAssets).where(and(eq(labAssets.labId, user.labId), eq(labAssets.ownerUserId, ownerUserId), eq(labAssets.kind, "signature"))).orderBy(labAssets.createdAt)).at(-1);
-      if (asset) await db.update(users).set({ signatureAssetId: asset.id }).where(eq(users.id, ownerUserId));
-    }
+    // These kinds are single-instance — deactivate any previous active one.
+    await db.update(labAssets).set({ isActive: false }).where(and(eq(labAssets.labId, user.labId), eq(labAssets.kind, kind as never)));
+    await db.insert(labAssets).values({ labId: user.labId, kind: kind as never, storageKey: stored.key, url: stored.url, mimeType: file.type, isActive: true, createdBy: user.id });
 
     await audit(user, "settings.asset_upload", { entity: "lab_asset", summary: `Uploaded ${kind}` });
     revalidatePath("/settings/report-assets");
-    revalidatePath("/settings/signatures");
     return ok({ url: stored.url }, "Uploaded successfully");
   });
 }
@@ -96,11 +86,7 @@ export async function removeLabAsset(id: string): Promise<ActionResult> {
     const asset = (await db.select().from(labAssets).where(and(eq(labAssets.id, id), eq(labAssets.labId, user.labId)))).at(0);
     if (!asset) return fail("Asset not found.");
     await db.update(labAssets).set({ isActive: false }).where(eq(labAssets.id, id));
-    if (asset.kind === "signature" && asset.ownerUserId) {
-      await db.update(users).set({ signatureAssetId: null }).where(and(eq(users.id, asset.ownerUserId), eq(users.signatureAssetId, id)));
-    }
     revalidatePath("/settings/report-assets");
-    revalidatePath("/settings/signatures");
     return ok(undefined, "Removed");
   });
 }

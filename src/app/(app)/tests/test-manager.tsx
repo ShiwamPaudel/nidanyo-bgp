@@ -113,6 +113,34 @@ function TestFormModal({ departments, sampleTypes, initial, onClose }: { departm
 
   const num = (v: number | null | undefined) => (v == null ? "" : v);
 
+  // Auto-derived "N – M" range string from low/high (mirrors report rendering).
+  const autoRange = (low: number | null | undefined, high: number | null | undefined) => {
+    if (low != null && high != null) return `${low} – ${high}`;
+    if (low != null) return `> ${low}`;
+    if (high != null) return `< ${high}`;
+    return "";
+  };
+
+  // Update ref low/high AND auto-fill the display range — unless the user has
+  // manually customised the range (i.e. it no longer matches the auto value).
+  function setRefBound(field: "refLow" | "refHigh", val: number | null) {
+    setForm((f) => {
+      const keepAuto = !f.refRangeText || f.refRangeText === autoRange(f.refLow, f.refHigh);
+      const nextLow = field === "refLow" ? val : f.refLow ?? null;
+      const nextHigh = field === "refHigh" ? val : f.refHigh ?? null;
+      return { ...f, [field]: val, refRangeText: keepAuto ? autoRange(nextLow, nextHigh) || null : f.refRangeText };
+    });
+  }
+  function setParamRefBound(i: number, field: "refLow" | "refHigh", val: number | null) {
+    const p = form.parameters![i];
+    const keepAuto = !p.refRangeText || p.refRangeText === autoRange(p.refLow, p.refHigh);
+    const nextLow = field === "refLow" ? val : p.refLow ?? null;
+    const nextHigh = field === "refHigh" ? val : p.refHigh ?? null;
+    const patch: Partial<Param> = { [field]: val };
+    if (keepAuto) patch.refRangeText = autoRange(nextLow, nextHigh) || null;
+    updateParam(i, patch);
+  }
+
   return (
     <Modal
       open
@@ -145,10 +173,10 @@ function TestFormModal({ departments, sampleTypes, initial, onClose }: { departm
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Result type"><Select value={form.resultType} onChange={(e) => set("resultType", e.target.value as TestInput["resultType"])}><option value="numeric">Numeric</option><option value="text">Text</option><option value="pos_neg">Positive/Negative</option></Select></Field>
               <Field label="Unit"><Input value={form.unit ?? ""} onChange={(e) => set("unit", e.target.value || null)} /></Field>
-              <Field label="Reference text"><Input value={form.refRangeText ?? ""} onChange={(e) => set("refRangeText", e.target.value || null)} placeholder="e.g. Negative" /></Field>
-              <Field label="Ref low"><Input type="number" value={num(form.refLow)} onChange={(e) => set("refLow", e.target.value === "" ? null : Number(e.target.value))} /></Field>
-              <Field label="Ref high"><Input type="number" value={num(form.refHigh)} onChange={(e) => set("refHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
               <Field label="Critical high"><Input type="number" value={num(form.criticalHigh)} onChange={(e) => set("criticalHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+              <Field label="Ref low"><Input type="number" value={num(form.refLow)} onChange={(e) => setRefBound("refLow", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+              <Field label="Ref high"><Input type="number" value={num(form.refHigh)} onChange={(e) => setRefBound("refHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+              <Field label="Display reference range" hint="Shown on reports. Auto-filled from ref low/high — edit to override (e.g. Negative)."><Input value={form.refRangeText ?? ""} onChange={(e) => set("refRangeText", e.target.value || null)} placeholder="e.g. 40 – 80" /></Field>
             </div>
           </div>
         )}
@@ -164,9 +192,10 @@ function TestFormModal({ departments, sampleTypes, initial, onClose }: { departm
               {form.parameters!.map((p, i) => (
                 <div key={i} className="grid grid-cols-12 items-end gap-2 rounded-lg border border-border p-2">
                   <div className="col-span-12 sm:col-span-3"><Field label={i === 0 ? "Name" : undefined}><Input value={p.name} onChange={(e) => updateParam(i, { name: e.target.value })} placeholder="e.g. Hemoglobin" className="h-9" /></Field></div>
-                  <div className="col-span-3 sm:col-span-2"><Field label={i === 0 ? "Unit" : undefined}><Input value={p.unit ?? ""} onChange={(e) => updateParam(i, { unit: e.target.value || null })} className="h-9" /></Field></div>
-                  <div className="col-span-3 sm:col-span-2"><Field label={i === 0 ? "Low" : undefined}><Input type="number" value={num(p.refLow)} onChange={(e) => updateParam(i, { refLow: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
-                  <div className="col-span-3 sm:col-span-2"><Field label={i === 0 ? "High" : undefined}><Input type="number" value={num(p.refHigh)} onChange={(e) => updateParam(i, { refHigh: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
+                  <div className="col-span-3 sm:col-span-1"><Field label={i === 0 ? "Unit" : undefined}><Input value={p.unit ?? ""} onChange={(e) => updateParam(i, { unit: e.target.value || null })} className="h-9" /></Field></div>
+                  <div className="col-span-3 sm:col-span-1"><Field label={i === 0 ? "Low" : undefined}><Input type="number" value={num(p.refLow)} onChange={(e) => setParamRefBound(i, "refLow", e.target.value === "" ? null : Number(e.target.value))} className="h-9" /></Field></div>
+                  <div className="col-span-3 sm:col-span-1"><Field label={i === 0 ? "High" : undefined}><Input type="number" value={num(p.refHigh)} onChange={(e) => setParamRefBound(i, "refHigh", e.target.value === "" ? null : Number(e.target.value))} className="h-9" /></Field></div>
+                  <div className="col-span-9 sm:col-span-3"><Field label={i === 0 ? "Reference range" : undefined}><Input value={p.refRangeText ?? ""} onChange={(e) => updateParam(i, { refRangeText: e.target.value || null })} placeholder={autoRange(p.refLow, p.refHigh) || "e.g. 40 – 80"} className="h-9" /></Field></div>
                   <div className="col-span-2 sm:col-span-2"><Field label={i === 0 ? "Crit. high" : undefined}><Input type="number" value={num(p.criticalHigh)} onChange={(e) => updateParam(i, { criticalHigh: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
                   <div className="col-span-1"><Button variant="ghost" size="icon-sm" onClick={() => removeParam(i)} className="text-destructive" aria-label="Remove"><Trash2 className="size-4" /></Button></div>
                 </div>

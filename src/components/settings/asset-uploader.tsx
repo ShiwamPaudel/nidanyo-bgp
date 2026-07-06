@@ -9,7 +9,6 @@ import { uploadLabAsset, removeLabAsset } from "@/lib/actions/settings-actions";
 
 export function AssetUploader({
   kind,
-  ownerUserId,
   currentUrl,
   currentId,
   label,
@@ -17,7 +16,6 @@ export function AssetUploader({
   aspect = "wide",
 }: {
   kind: string;
-  ownerUserId?: string;
   currentUrl?: string | null;
   currentId?: string | null;
   label: string;
@@ -36,7 +34,6 @@ export function AssetUploader({
     setPreview(URL.createObjectURL(file));
     const fd = new FormData();
     fd.set("kind", kind);
-    if (ownerUserId) fd.set("ownerUserId", ownerUserId);
     fd.set("file", file);
     start(async () => {
       const res = await uploadLabAsset(fd);
