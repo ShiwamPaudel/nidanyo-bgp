@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Phone } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { Logo } from "@/components/brand/logo";
 import { LoginForm } from "./login-form";
@@ -48,7 +49,29 @@ export default async function LoginPage() {
             ))}
           </ul>
         </div>
-        <p className="relative z-10 text-xs text-white/60">by Infobytes Nepal</p>
+        <div className="relative z-10 flex items-end justify-between gap-4">
+          <a
+            href="https://www.infobytesnepal.com"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-white/60 transition-colors hover:text-white/90"
+          >
+            by Infobytes Nepal Pvt. Ltd.
+          </a>
+          <div className="text-right text-xs text-white/70">
+            <p className="text-white/60">In case of Support Please Contact.</p>
+            <p className="mt-1 flex items-center justify-end gap-1.5 font-medium text-white/90">
+              <Phone className="size-3.5" />
+              <a href="tel:+9779843468715" className="hover:underline">
+                +977 984 3468715
+              </a>
+              <span className="text-white/40">|</span>
+              <a href="tel:+9779863777171" className="hover:underline">
+                986 3777171
+              </a>
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Form panel */}
@@ -57,6 +80,12 @@ export default async function LoginPage() {
           <div className="mb-8 lg:hidden">
             <Logo size="lg" showTagline />
           </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Logo"
+            className="mb-6 w-full rounded-2xl object-cover shadow-sm ring-1 ring-black/5"
+          />
           <div className="space-y-1.5">
             <h2 className="text-2xl font-bold tracking-tight">Sign in</h2>
             <p className="text-sm text-muted-foreground">
