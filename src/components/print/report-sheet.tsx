@@ -192,12 +192,12 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
                     const abnormal = flag !== "normal";
                     return (
                       <tr key={v.id} className="border-b border-[#F0F2F0]">
-                        <td className="py-1">{v.label}</td>
-                        <td className="py-1 font-semibold tabular" style={{ color: critical ? "#FF3131" : abnormal ? "#B45309" : "#0E1B14" }}>
+                        <td className="py-1 align-top">{v.label}</td>
+                        <td className="py-1 align-top font-semibold tabular" style={{ color: critical ? "#FF3131" : abnormal ? "#B45309" : "#0E1B14" }}>
                           {v.valueText ?? "—"} {abnormal && <span className="text-[9px]">{flagSymbol(flag)}</span>}
                         </td>
-                        <td className="py-1 text-[#475467]">{v.unit ?? ""}</td>
-                        <td className="py-1 text-[#475467]">{v.refText ?? ""}</td>
+                        <td className="py-1 align-top text-[#475467]">{v.unit ?? ""}</td>
+                        <td className="whitespace-pre-line py-1 align-top text-[#475467]">{v.refText ?? ""}</td>
                       </tr>
                     );
                   })}

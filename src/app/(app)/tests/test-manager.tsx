@@ -176,7 +176,7 @@ function TestFormModal({ departments, sampleTypes, initial, onClose }: { departm
               <Field label="Critical high"><Input type="number" value={num(form.criticalHigh)} onChange={(e) => set("criticalHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
               <Field label="Ref low"><Input type="number" value={num(form.refLow)} onChange={(e) => setRefBound("refLow", e.target.value === "" ? null : Number(e.target.value))} /></Field>
               <Field label="Ref high"><Input type="number" value={num(form.refHigh)} onChange={(e) => setRefBound("refHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
-              <Field label="Display reference range" hint="Shown on reports. Auto-filled from ref low/high — edit to override (e.g. Negative)."><Input value={form.refRangeText ?? ""} onChange={(e) => set("refRangeText", e.target.value || null)} placeholder="e.g. 40 – 80" /></Field>
+              <Field label="Display reference range" hint="Shown on reports. Auto-filled from ref low/high — edit to override. Press Enter for multiple lines (e.g. age/sex bands)."><Textarea rows={2} value={form.refRangeText ?? ""} onChange={(e) => set("refRangeText", e.target.value || null)} placeholder={"e.g.\nMale: 40 – 80\nFemale: 35 – 70"} className="min-h-[38px] resize-y" /></Field>
             </div>
           </div>
         )}
@@ -195,7 +195,7 @@ function TestFormModal({ departments, sampleTypes, initial, onClose }: { departm
                   <div className="col-span-3 sm:col-span-1"><Field label={i === 0 ? "Unit" : undefined}><Input value={p.unit ?? ""} onChange={(e) => updateParam(i, { unit: e.target.value || null })} className="h-9" /></Field></div>
                   <div className="col-span-3 sm:col-span-1"><Field label={i === 0 ? "Low" : undefined}><Input type="number" value={num(p.refLow)} onChange={(e) => setParamRefBound(i, "refLow", e.target.value === "" ? null : Number(e.target.value))} className="h-9" /></Field></div>
                   <div className="col-span-3 sm:col-span-1"><Field label={i === 0 ? "High" : undefined}><Input type="number" value={num(p.refHigh)} onChange={(e) => setParamRefBound(i, "refHigh", e.target.value === "" ? null : Number(e.target.value))} className="h-9" /></Field></div>
-                  <div className="col-span-9 sm:col-span-3"><Field label={i === 0 ? "Reference range" : undefined}><Input value={p.refRangeText ?? ""} onChange={(e) => updateParam(i, { refRangeText: e.target.value || null })} placeholder={autoRange(p.refLow, p.refHigh) || "e.g. 40 – 80"} className="h-9" /></Field></div>
+                  <div className="col-span-9 sm:col-span-3"><Field label={i === 0 ? "Reference range" : undefined}><Textarea rows={1} value={p.refRangeText ?? ""} onChange={(e) => updateParam(i, { refRangeText: e.target.value || null })} placeholder={autoRange(p.refLow, p.refHigh) || "e.g. 40 – 80"} className="min-h-9 resize-y py-1.5 leading-tight" /></Field></div>
                   <div className="col-span-2 sm:col-span-2"><Field label={i === 0 ? "Crit. high" : undefined}><Input type="number" value={num(p.criticalHigh)} onChange={(e) => updateParam(i, { criticalHigh: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
                   <div className="col-span-1"><Button variant="ghost" size="icon-sm" onClick={() => removeParam(i)} className="text-destructive" aria-label="Remove"><Trash2 className="size-4" /></Button></div>
                 </div>
