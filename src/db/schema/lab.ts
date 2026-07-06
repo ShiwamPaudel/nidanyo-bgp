@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, blob } from "drizzle-orm/sqlite-core";
 import { idCol, timestamps, actorColumns } from "./_shared";
 
 /**
@@ -77,3 +77,17 @@ export const labAssets = sqliteTable(
     labKindIdx: index("lab_assets_lab_kind_idx").on(t.labId, t.kind),
   }),
 );
+
+/**
+ * asset_blobs — raw bytes for uploaded assets when STORAGE_PROVIDER="db".
+ * Kept separate from lab_assets so metadata queries never load blob bytes;
+ * the bytes are streamed only by the /api/asset/[key] route. `key` matches
+ * lab_assets.storage_key.
+ */
+export const assetBlobs = sqliteTable("asset_blobs", {
+  key: text("key").primaryKey(),
+  data: blob("data", { mode: "buffer" }).notNull(),
+  mimeType: text("mime_type"),
+  size: integer("size"),
+  ...timestamps,
+});
