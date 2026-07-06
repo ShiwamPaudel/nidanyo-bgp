@@ -1,0 +1,23 @@
+{
+  "name": "Nidanyo — Laboratory Management",
+  "short_name": "Nidanyo",
+  "description": "Laboratory Information & Operations Management System. From Liquid to Logic.",
+  "id": "/dashboard",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F8FAF8",
+  "theme_color": "#075323",
+  "categories": ["medical", "productivity", "business"],
+  "icons": [
+    { "src": "/favicon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New visit", "url": "/visits/new" },
+    { "name": "Approvals", "url": "/approval" },
+    { "name": "Sample Collection", "url": "/sample-collection" }
+  ]
+}

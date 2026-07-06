@@ -1,0 +1,1 @@
+ALTER TABLE `lab_settings` ADD `calendar_system` text DEFAULT 'AD' NOT NULL;

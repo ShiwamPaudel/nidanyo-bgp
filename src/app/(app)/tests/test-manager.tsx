@@ -1,0 +1,184 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Plus, Pencil, Trash2, Beaker } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input, Select, Textarea, Field } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
+import { Badge } from "@/components/ui/badge";
+import { saveTest, setTestActive, loadTestForEdit } from "@/lib/actions/catalog-actions";
+import type { TestInput } from "@/lib/validators/catalog";
+
+type Option = { id: string; name: string };
+type Param = NonNullable<TestInput["parameters"]>[number];
+
+const blank = (): TestInput & { id?: string } => ({
+  name: "",
+  shortCode: "",
+  departmentId: null,
+  sampleTypeId: null,
+  price: 0,
+  method: null,
+  unit: null,
+  description: null,
+  resultType: "numeric",
+  refLow: null,
+  refHigh: null,
+  refRangeText: null,
+  criticalLow: null,
+  criticalHigh: null,
+  tatHours: 24,
+  parameters: [],
+});
+
+export function NewTestButton({ departments, sampleTypes }: { departments: Option[]; sampleTypes: Option[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}><Plus className="size-4" /> Add test</Button>
+      {open && <TestFormModal departments={departments} sampleTypes={sampleTypes} initial={blank()} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+export function EditTestButton({ testId, departments, sampleTypes }: { testId: string; departments: Option[]; sampleTypes: Option[] }) {
+  const [open, setOpen] = useState(false);
+  const [initial, setInitial] = useState<(TestInput & { id?: string }) | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function openEdit() {
+    setLoading(true);
+    const res = await loadTestForEdit(testId);
+    setLoading(false);
+    if (res.ok) {
+      setInitial(res.data);
+      setOpen(true);
+    } else toast.error(res.error);
+  }
+
+  return (
+    <>
+      <Button variant="ghost" size="icon-sm" onClick={openEdit} loading={loading} aria-label="Edit"><Pencil className="size-4" /></Button>
+      {open && initial && <TestFormModal departments={departments} sampleTypes={sampleTypes} initial={initial} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+export function ToggleTestButton({ testId, active }: { testId: string; active: boolean }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => start(async () => { const r = await setTestActive(testId, !active); r.ok ? toast.success(r.message ?? "") : toast.error(r.error); if (r.ok) router.refresh(); })}
+      loading={pending}
+    >
+      {active ? "Deactivate" : "Activate"}
+    </Button>
+  );
+}
+
+function TestFormModal({ departments, sampleTypes, initial, onClose }: { departments: Option[]; sampleTypes: Option[]; initial: TestInput & { id?: string }; onClose: () => void }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [form, setForm] = useState<TestInput & { id?: string }>(initial);
+  const set = <K extends keyof TestInput>(k: K, v: (TestInput & { id?: string })[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const multi = (form.parameters?.length ?? 0) > 0;
+
+  function addParam() {
+    set("parameters", [...(form.parameters ?? []), { name: "", unit: null, resultType: "numeric", refLow: null, refHigh: null, refRangeText: null, criticalLow: null, criticalHigh: null }] as Param[]);
+  }
+  function updateParam(i: number, patch: Partial<Param>) {
+    const next = [...(form.parameters ?? [])];
+    next[i] = { ...next[i], ...patch };
+    set("parameters", next as Param[]);
+  }
+  function removeParam(i: number) {
+    set("parameters", (form.parameters ?? []).filter((_, idx) => idx !== i) as Param[]);
+  }
+
+  function submit() {
+    start(async () => {
+      const res = await saveTest(form);
+      if (res.ok) {
+        toast.success(res.message ?? "Saved");
+        onClose();
+        router.refresh();
+      } else toast.error(res.error);
+    });
+  }
+
+  const num = (v: number | null | undefined) => (v == null ? "" : v);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={form.id ? "Edit test" : "Add test"}
+      description="Define pricing, reference ranges, and parameters."
+      size="lg"
+      footer={<><Button variant="outline" onClick={onClose} disabled={pending}>Cancel</Button><Button onClick={submit} loading={pending}>Save test</Button></>}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Test name" required><Input value={form.name} onChange={(e) => set("name", e.target.value)} autoFocus /></Field>
+          <Field label="Short code" required><Input value={form.shortCode} onChange={(e) => set("shortCode", e.target.value.toUpperCase())} /></Field>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Department"><Select value={form.departmentId ?? ""} onChange={(e) => set("departmentId", e.target.value || null)}><option value="">—</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></Field>
+          <Field label="Sample type"><Select value={form.sampleTypeId ?? ""} onChange={(e) => set("sampleTypeId", e.target.value || null)}><option value="">—</option>{sampleTypes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+          <Field label="Price" required><Input type="number" min={0} value={form.price} onChange={(e) => set("price", Number(e.target.value))} /></Field>
+        </div>
+
+        <Field label="Method (optional)"><Input value={form.method ?? ""} onChange={(e) => set("method", e.target.value || null)} placeholder="e.g. Flow cytometry" /></Field>
+
+        <Field label="Report note / description" hint="Printed under this test on the report (e.g. instrument & methodology statement)">
+          <Textarea value={form.description ?? ""} onChange={(e) => set("description", e.target.value || null)} placeholder="e.g. This test is performed on an advanced hematology analyzer with ScatterFlow technology." className="min-h-[60px]" />
+        </Field>
+
+        {!multi && (
+          <div className="rounded-lg border border-border bg-surface p-3">
+            <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Single-value reference (used when no parameters added)</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Result type"><Select value={form.resultType} onChange={(e) => set("resultType", e.target.value as TestInput["resultType"])}><option value="numeric">Numeric</option><option value="text">Text</option><option value="pos_neg">Positive/Negative</option></Select></Field>
+              <Field label="Unit"><Input value={form.unit ?? ""} onChange={(e) => set("unit", e.target.value || null)} /></Field>
+              <Field label="Reference text"><Input value={form.refRangeText ?? ""} onChange={(e) => set("refRangeText", e.target.value || null)} placeholder="e.g. Negative" /></Field>
+              <Field label="Ref low"><Input type="number" value={num(form.refLow)} onChange={(e) => set("refLow", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+              <Field label="Ref high"><Input type="number" value={num(form.refHigh)} onChange={(e) => set("refHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+              <Field label="Critical high"><Input type="number" value={num(form.criticalHigh)} onChange={(e) => set("criticalHigh", e.target.value === "" ? null : Number(e.target.value))} /></Field>
+            </div>
+          </div>
+        )}
+
+        {/* Parameters */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold">Parameters {multi && <Badge tone="info" className="ml-1">Multi-parameter</Badge>}</p>
+            <Button size="sm" variant="subtle" onClick={addParam}><Plus className="size-4" /> Add parameter</Button>
+          </div>
+          {multi ? (
+            <div className="space-y-2">
+              {form.parameters!.map((p, i) => (
+                <div key={i} className="grid grid-cols-12 items-end gap-2 rounded-lg border border-border p-2">
+                  <div className="col-span-12 sm:col-span-3"><Field label={i === 0 ? "Name" : undefined}><Input value={p.name} onChange={(e) => updateParam(i, { name: e.target.value })} placeholder="e.g. Hemoglobin" className="h-9" /></Field></div>
+                  <div className="col-span-3 sm:col-span-2"><Field label={i === 0 ? "Unit" : undefined}><Input value={p.unit ?? ""} onChange={(e) => updateParam(i, { unit: e.target.value || null })} className="h-9" /></Field></div>
+                  <div className="col-span-3 sm:col-span-2"><Field label={i === 0 ? "Low" : undefined}><Input type="number" value={num(p.refLow)} onChange={(e) => updateParam(i, { refLow: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
+                  <div className="col-span-3 sm:col-span-2"><Field label={i === 0 ? "High" : undefined}><Input type="number" value={num(p.refHigh)} onChange={(e) => updateParam(i, { refHigh: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
+                  <div className="col-span-2 sm:col-span-2"><Field label={i === 0 ? "Crit. high" : undefined}><Input type="number" value={num(p.criticalHigh)} onChange={(e) => updateParam(i, { criticalHigh: e.target.value === "" ? null : Number(e.target.value) })} className="h-9" /></Field></div>
+                  <div className="col-span-1"><Button variant="ghost" size="icon-sm" onClick={() => removeParam(i)} className="text-destructive" aria-label="Remove"><Trash2 className="size-4" /></Button></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+              <Beaker className="mr-1 inline size-4" /> This is a single-value test. Add parameters to make it multi-parameter (e.g. CBC).
+            </p>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}

@@ -1,0 +1,185 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ───────────────────────────────────────────────────────────
+   Nidanyo brand theme — LIGHT ONLY.
+   Brand: Green #075323 · Red #FF3131 · Blue #144FCA
+   Colors expressed as HSL channels for Tailwind alpha support.
+   ─────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    /* Brand green #075323 -> hsl(146 85% 18%) */
+    --brand: 146 85% 18%;
+    --brand-foreground: 0 0% 100%;
+    --brand-50: 146 45% 96%;
+    --brand-100: 146 40% 90%;
+    --brand-600: 146 85% 20%;
+    --brand-700: 146 88% 15%;
+
+    /* Accent red #FF3131 -> hsl(0 100% 60%) */
+    --danger: 0 100% 60%;
+    --danger-foreground: 0 0% 100%;
+    --danger-50: 0 100% 97%;
+
+    /* Secondary blue #144FCA -> hsl(222 82% 43%) */
+    --info: 222 82% 43%;
+    --info-foreground: 0 0% 100%;
+    --info-50: 222 82% 97%;
+
+    /* Neutral surfaces */
+    --background: 0 0% 100%;               /* #FFFFFF */
+    --foreground: 146 33% 8%;              /* #0E1B14 dark text */
+    --surface: 140 20% 98%;                /* #F8FAF8 soft surface */
+    --card: 0 0% 100%;
+    --card-foreground: 146 33% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 146 33% 8%;
+
+    --primary: 146 85% 18%;                /* brand green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 82% 43%;              /* brand blue */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 140 18% 96%;
+    --muted-foreground: 145 7% 42%;        /* #647067 muted text */
+    --accent: 146 45% 95%;
+    --accent-foreground: 146 85% 16%;
+
+    --destructive: 0 100% 60%;             /* red */
+    --destructive-foreground: 0 0% 100%;
+    --success: 146 70% 30%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 92% 12%;
+
+    --border: 160 7% 88%;                  /* #DFE2E2 */
+    --input: 160 7% 88%;
+    --ring: 146 85% 22%;
+
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface text-foreground antialiased;
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Focus visibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Numeric tabular alignment for money/tables */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Subtle scrollbar */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+
+  /* Loading skeleton shimmer */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-muted;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      hsl(0 0% 100% / 0.55),
+      transparent
+    );
+  }
+}
+
+/* ───────────────────────────────────────────────────────────
+   Print styles — A4 bills & reports
+   ─────────────────────────────────────────────────────────── */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  html,
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────
+   Branded loader animations
+   ─────────────────────────────────────────────────────────── */
+@keyframes nido-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes nido-orbit {
+  from { transform: rotate(0deg) translateX(26px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(26px) rotate(-360deg); }
+}
+@keyframes nido-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.7; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+@keyframes nido-bar {
+  0% { transform: scaleY(0.4); opacity: 0.5; }
+  50% { transform: scaleY(1); opacity: 1; }
+  100% { transform: scaleY(0.4); opacity: 0.5; }
+}
+@keyframes nav-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.nido-ring {
+  background: conic-gradient(from 0deg, #075323, #144FCA, #FF3131, #075323);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5px));
+  animation: nido-spin 1.1s linear infinite;
+}
+.nido-quote-enter {
+  animation: fade-in 0.5s ease-out;
+}
+
+/* A4 paper sheet (screen + print) */
+.a4-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  background: #fff;
+  color: #0e1b14;
+}
