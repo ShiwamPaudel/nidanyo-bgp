@@ -11,11 +11,9 @@ import { approveVisit, sendBackResults } from "@/lib/actions/approval-actions";
 
 export function ApprovalActions({
   visitId,
-  hasSignature,
   dueRemaining,
 }: {
   visitId: string;
-  hasSignature: boolean;
   dueRemaining: number;
 }) {
   const router = useRouter();
@@ -72,11 +70,6 @@ export function ApprovalActions({
         }
       >
         <div className="space-y-3">
-          {!hasSignature && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              No signature is assigned to your account yet. The report will show your name and designation. An administrator can upload your signature in Settings.
-            </div>
-          )}
           {dueRemaining > 0 && (
             <div className="rounded-lg border border-blue-200 bg-info-50 px-3 py-2 text-sm text-info">
               This bill still has an outstanding due. The report will be approved now but only released to the patient once payment is cleared.

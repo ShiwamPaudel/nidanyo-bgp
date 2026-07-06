@@ -15,6 +15,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     hasPermission(user, PERMISSIONS.USERS_MANAGE) && { href: "/settings/users", label: "Users" },
     hasPermission(user, PERMISSIONS.ROLES_MANAGE) && { href: "/settings/roles", label: "Roles" },
     hasPermission(user, PERMISSIONS.USERS_MANAGE) && { href: "/settings/signatures", label: "Signatures" },
+    hasPermission(user, PERMISSIONS.SETTINGS_MANAGE) && { href: "/settings/report-signatories", label: "Report Signatories" },
     hasPermission(user, PERMISSIONS.SETTINGS_MANAGE) && { href: "/settings/departments", label: "Departments" },
     hasPermission(user, PERMISSIONS.SETTINGS_MANAGE) && { href: "/settings/sample-types", label: "Sample Types" },
     hasPermission(user, PERMISSIONS.SETTINGS_MANAGE) && { href: "/settings/doctors", label: "Referring Doctors" },

@@ -79,6 +79,34 @@ export const labAssets = sqliteTable(
 );
 
 /**
+ * report_signatories — admin-managed signature blocks shown at the END of a
+ * report (last page), independent of who approved the results. Each has an
+ * uploaded signature image plus a name and description (designation). Multiple
+ * signatories render side by side, ordered by displayOrder.
+ */
+export const reportSignatories = sqliteTable(
+  "report_signatories",
+  {
+    id: idCol(),
+    labId: text("lab_id")
+      .notNull()
+      .references(() => labs.id),
+    name: text("name").notNull(),
+    description: text("description"), // designation / qualification line
+    storageKey: text("storage_key").notNull(), // storage adapter key
+    url: text("url").notNull(), // resolved serving url
+    mimeType: text("mime_type"),
+    displayOrder: integer("display_order").notNull().default(0),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    ...timestamps,
+    ...actorColumns,
+  },
+  (t) => ({
+    labIdx: index("report_signatories_lab_idx").on(t.labId),
+  }),
+);
+
+/**
  * asset_blobs — raw bytes for uploaded assets when STORAGE_PROVIDER="db".
  * Kept separate from lab_assets so metadata queries never load blob bytes;
  * the bytes are streamed only by the /api/asset/[key] route. `key` matches

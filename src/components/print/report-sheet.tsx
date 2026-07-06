@@ -24,7 +24,14 @@ export interface ReportEntry {
   department: string | null;
   note?: string | null;
   method?: string | null;
-  signatureUrl: string | null;
+}
+
+/** Admin-managed signatory shown at the end of the report. */
+export interface ReportSignatory {
+  id: string;
+  name: string;
+  description: string | null;
+  url: string;
 }
 
 export interface ReportSheetProps {
@@ -50,6 +57,8 @@ export interface ReportSheetProps {
   };
   visit: { code: string; referredBy: string | null; visitDate: Date | number };
   entries: ReportEntry[];
+  /** Admin-managed signatories rendered at the end of the report (last page). */
+  signatories?: ReportSignatory[];
   qrDataUrl?: string;
   publicUrl?: string | null;
   watermark?: string;
@@ -68,24 +77,11 @@ export function ReportSheet({
   patient,
   visit,
   entries,
+  signatories = [],
   qrDataUrl,
   publicUrl,
   watermark,
 }: ReportSheetProps) {
-  // Group entries by department for clean sectioning.
-  const byDept = new Map<string, ReportEntry[]>();
-  for (const e of entries) {
-    const key = e.department ?? "Investigations";
-    const arr = byDept.get(key) ?? [];
-    arr.push(e);
-    byDept.set(key, arr);
-  }
-
-  // Pick a signatory (first approver with a signature, else first approver).
-  const signatory = entries.find((e) => e.signatureUrl)?.entry ?? entries[0]?.entry;
-  const signatureUrl = entries.find((e) => e.signatureUrl)?.signatureUrl ?? null;
-  const interpretations = entries.filter((e) => e.entry.interpretation).map((e) => ({ test: e.entry.testName, text: e.entry.interpretation! }));
-
   return (
     <div className="a4-sheet relative shadow-card print-sheet" style={{ padding: 0 }}>
       {watermark && (
@@ -118,7 +114,41 @@ export function ReportSheet({
         <tbody>
           <tr>
             <td style={{ padding: `3mm ${marginXMm}mm` }}>
+              <ReportBody cal={cal} patient={patient} visit={visit} entries={entries} signatories={signatories} qrDataUrl={qrDataUrl} publicUrl={publicUrl} />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
+export type ReportBodyProps = Pick<ReportSheetProps, "cal" | "patient" | "visit" | "entries" | "qrDataUrl" | "publicUrl"> & {
+  signatories?: ReportSignatory[];
+};
+
+/**
+ * The printable content of a report (everything between the letterhead header
+ * and footer). Shared by the table-based ReportSheet and the paged.js print
+ * view so both render identical content.
+ */
+export function ReportBody({ cal, patient, visit, entries, signatories = [], qrDataUrl, publicUrl }: ReportBodyProps) {
+  // Group entries by department for clean sectioning.
+  const byDept = new Map<string, ReportEntry[]>();
+  for (const e of entries) {
+    const key = e.department ?? "Investigations";
+    const arr = byDept.get(key) ?? [];
+    arr.push(e);
+    byDept.set(key, arr);
+  }
+
+  // Report date is taken from the (first) approved entry. Signatures no longer
+  // depend on the approver — they come from the admin-managed signatory list.
+  const reportMeta = entries[0]?.entry;
+  const interpretations = entries.filter((e) => e.entry.interpretation).map((e) => ({ test: e.entry.testName, text: e.entry.interpretation! }));
+
+  return (
+    <>
       <div className="mt-2 text-center">
         <h2 className="inline-block rounded bg-brand-50 px-4 py-0.5 text-[12px] font-bold uppercase tracking-wider text-brand-700">Laboratory Report</h2>
       </div>
@@ -133,7 +163,7 @@ export function ReportSheet({
         <div className="space-y-0.5 text-right">
           <Line label="Visit No" value={visit.code} align="right" bold />
           <Line label="Referred by" value={visit.referredBy ?? patient.referredBy ?? "—"} align="right" />
-          <Line label="Report date" value={fmtDateTime(signatory?.approvedAt ?? visit.visitDate, cal)} align="right" />
+          <Line label="Report date" value={fmtDateTime(reportMeta?.approvedAt ?? visit.visitDate, cal)} align="right" />
         </div>
       </div>
 
@@ -198,8 +228,8 @@ export function ReportSheet({
         ** End of report ** · Flags: L Low · H High · LL/HH Critical. Please correlate clinically.
       </p>
 
-      {/* Signature + QR */}
-      <div className="mt-6 flex items-end justify-between break-inside-avoid">
+      {/* Verification QR + admin-managed signatories (end of report) */}
+      <div className="mt-6 flex items-end justify-between gap-4 break-inside-avoid">
         <div className="text-[10px]">
           {qrDataUrl && (
             <div className="flex items-center gap-2">
@@ -212,25 +242,22 @@ export function ReportSheet({
             </div>
           )}
         </div>
-        <div className="text-center text-[11px]">
-          {signatureUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={signatureUrl} alt="" className="mx-auto mb-1 h-12 object-contain" />
-          ) : (
-            <div className="mb-1 h-12" />
-          )}
-          <div className="border-t border-[#0E1B14] px-6 pt-1">
-            <p className="font-semibold">{signatory?.approvedByName ?? "—"}</p>
-            <p className="text-[10px] text-[#647067]">{signatory?.approvedByDesignation ?? "Pathologist"}</p>
+        {signatories.length > 0 && (
+          <div className="flex flex-wrap items-end justify-end gap-x-8 gap-y-4">
+            {signatories.map((s) => (
+              <div key={s.id} className="text-center text-[11px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.url} alt="" className="mx-auto mb-1 h-12 object-contain" />
+                <div className="border-t border-[#0E1B14] px-6 pt-1">
+                  <p className="font-semibold">{s.name}</p>
+                  {s.description && <p className="text-[10px] text-[#647067]">{s.description}</p>}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
       </div>
-
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    </>
   );
 }
 

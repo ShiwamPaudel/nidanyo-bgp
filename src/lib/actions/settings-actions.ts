@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db/client";
-import { labs, labSettings, users, roles, paymentModes, labAssets } from "@/db/schema";
+import { labs, labSettings, users, roles, paymentModes, labAssets, reportSignatories } from "@/db/schema";
 import { authorize } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { hashPassword } from "@/lib/crypto";
@@ -102,6 +102,91 @@ export async function removeLabAsset(id: string): Promise<ActionResult> {
     revalidatePath("/settings/report-assets");
     revalidatePath("/settings/signatures");
     return ok(undefined, "Removed");
+  });
+}
+
+/**
+ * Create or update a report signatory (admin-managed signature block shown at
+ * the end of reports, disassociated from any user). Accepts an optional image
+ * file — required when creating, kept as-is on update when omitted.
+ */
+export async function saveReportSignatory(formData: FormData): Promise<ActionResult> {
+  return run(async () => {
+    const user = await authorize(PERMISSIONS.SETTINGS_MANAGE);
+    const id = (formData.get("id") as string) || null;
+    const name = String(formData.get("name") || "").trim();
+    const description = String(formData.get("description") || "").trim() || null;
+    const file = formData.get("file") as File | null;
+    if (name.length < 2) return fail("Please enter the signatory's name.", { name: "Name is required" });
+
+    let stored: { key: string; url: string; mime: string | null } | null = null;
+    if (file && file.size > 0) {
+      if (file.size > 5 * 1024 * 1024) return fail("Image is too large (max 5 MB).");
+      if (!file.type.startsWith("image/")) return fail("Please upload an image file.");
+      const buf = Buffer.from(await file.arrayBuffer());
+      const put = await storage.put({ data: buf, filename: file.name, contentType: file.type, folder: `${user.labId}/report_signature` });
+      stored = { key: put.key, url: put.url, mime: file.type };
+    }
+
+    if (id) {
+      const existing = (await db.select().from(reportSignatories).where(and(eq(reportSignatories.id, id), eq(reportSignatories.labId, user.labId)))).at(0);
+      if (!existing) return fail("Signatory not found.");
+      await db
+        .update(reportSignatories)
+        .set({
+          name,
+          description,
+          ...(stored ? { storageKey: stored.key, url: stored.url, mimeType: stored.mime } : {}),
+          updatedBy: user.id,
+        })
+        .where(eq(reportSignatories.id, id));
+      if (stored && existing.storageKey) await storage.remove(existing.storageKey).catch(() => {});
+      await audit(user, "settings.signatory_update", { entity: "report_signatory", entityId: id, summary: `Updated signatory ${name}` });
+    } else {
+      if (!stored) return fail("Please choose a signature image.", { file: "Signature image is required" });
+      const maxOrder = (await db.select().from(reportSignatories).where(eq(reportSignatories.labId, user.labId))).reduce((m, r) => Math.max(m, r.displayOrder), -1);
+      await db.insert(reportSignatories).values({
+        labId: user.labId,
+        name,
+        description,
+        storageKey: stored.key,
+        url: stored.url,
+        mimeType: stored.mime,
+        displayOrder: maxOrder + 1,
+        createdBy: user.id,
+      });
+      await audit(user, "settings.signatory_create", { entity: "report_signatory", summary: `Added signatory ${name}` });
+    }
+    revalidatePath("/settings/report-signatories");
+    return ok(undefined, "Saved");
+  });
+}
+
+/** Delete a report signatory and its stored image. */
+export async function removeReportSignatory(id: string): Promise<ActionResult> {
+  return run(async () => {
+    const user = await authorize(PERMISSIONS.SETTINGS_MANAGE);
+    const row = (await db.select().from(reportSignatories).where(and(eq(reportSignatories.id, id), eq(reportSignatories.labId, user.labId)))).at(0);
+    if (!row) return fail("Signatory not found.");
+    await db.delete(reportSignatories).where(eq(reportSignatories.id, id));
+    if (row.storageKey) await storage.remove(row.storageKey).catch(() => {});
+    await audit(user, "settings.signatory_delete", { entity: "report_signatory", entityId: id, summary: `Removed signatory ${row.name}` });
+    revalidatePath("/settings/report-signatories");
+    return ok(undefined, "Removed");
+  });
+}
+
+/** Persist a new left-to-right order for report signatories. */
+export async function reorderReportSignatories(orderedIds: string[]): Promise<ActionResult> {
+  return run(async () => {
+    const user = await authorize(PERMISSIONS.SETTINGS_MANAGE);
+    await Promise.all(
+      orderedIds.map((id, idx) =>
+        db.update(reportSignatories).set({ displayOrder: idx }).where(and(eq(reportSignatories.id, id), eq(reportSignatories.labId, user.labId))),
+      ),
+    );
+    revalidatePath("/settings/report-signatories");
+    return ok(undefined, "Reordered");
   });
 }
 

@@ -1,17 +1,108 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Printer, ArrowLeft } from "lucide-react";
-import { ReportSheet, type ReportSheetProps } from "@/components/print/report-sheet";
+import { ReportSheet, ReportBody, type ReportSheetProps } from "@/components/print/report-sheet";
+import { PrintHeader, PrintFooter } from "@/components/print/letterhead";
+
+const PX_PER_MM = 3.7795275591; // 96dpi
+const PAGE_WIDTH_MM = 210; // A4
 
 /**
- * Client wrapper for the printable report. Adds toggles to include or exclude the
- * letterhead header/footer — labs that print onto pre-printed physical letter pads
- * turn these off (the blank space stays reserved on every page).
+ * Printable report view. Uses paged.js to paginate the report so a live
+ * "Page X of Y" line can be shown just above the footer on every page. The
+ * letterhead header/footer are placed into paged.js running elements (repeated
+ * per page via @page margin boxes); the reserved margins are measured from the
+ * actual header/footer heights so full-width letterhead images are never cropped.
+ *
+ * Paged.js runs in the browser only. Until it finishes — or if it errors — we
+ * fall back to the native table-based ReportSheet, which is fully functional on
+ * its own (just without the per-page number). This guarantees the report always
+ * renders.
  */
 export function ReportPrintView(props: ReportSheetProps) {
   const [showHeader, setShowHeader] = useState(true);
   const [showFooter, setShowFooter] = useState(true);
+  const [paged, setPaged] = useState(false); // true once paged.js output is shown
+  const sourceRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
+
+  const marginX = props.marginXMm ?? 12;
+  const fallbackBandMm = props.marginTopMm ?? 14;
+  const contentWidthMm = PAGE_WIDTH_MM - 2 * marginX;
+
+  useEffect(() => {
+    let cancelled = false;
+    const source = sourceRef.current;
+    const target = targetRef.current;
+    if (!source || !target) return;
+
+    async function paginate() {
+      try {
+        setPaged(false);
+        target!.innerHTML = "";
+
+        // Wait for header/footer/body images so heights measure correctly.
+        const imgs = Array.from(source!.querySelectorAll("img"));
+        await Promise.all(
+          imgs.map((img) =>
+            img.complete && img.naturalHeight > 0
+              ? Promise.resolve()
+              : new Promise<void>((res) => {
+                  img.addEventListener("load", () => res(), { once: true });
+                  img.addEventListener("error", () => res(), { once: true });
+                }),
+          ),
+        );
+        if (cancelled) return;
+
+        const headerEl = source!.querySelector(".rpt-header") as HTMLElement | null;
+        const footerEl = source!.querySelector(".rpt-footer") as HTMLElement | null;
+        const headerMm = showHeader && headerEl?.offsetHeight ? headerEl.offsetHeight / PX_PER_MM : fallbackBandMm;
+        const footerMm = showFooter && footerEl?.offsetHeight ? footerEl.offsetHeight / PX_PER_MM : fallbackBandMm;
+        const gapMm = 3;
+        const topMm = headerMm + gapMm;
+        const bottomMm = footerMm + gapMm;
+
+        const css = `
+          @page {
+            size: A4;
+            margin: ${topMm}mm ${marginX}mm ${bottomMm}mm ${marginX}mm;
+            @top-center { content: element(rptHeader); }
+            @bottom-center { content: element(rptFooter); }
+          }
+          .rpt-header { position: running(rptHeader); width: 100%; }
+          .rpt-footer { position: running(rptFooter); width: 100%; }
+          .rpt-content { width: 100%; }
+        `;
+
+        const { Previewer } = await import("pagedjs");
+        if (cancelled) return;
+        const previewer = new Previewer();
+        await previewer.preview(source!.innerHTML, [{ _: css }], target!);
+        if (cancelled) return;
+
+        // Fill in the per-page number now that total pages are known. Paged.js
+        // clones the running footer (incl. .rpt-pageno) into every page.
+        const pages = target!.querySelectorAll(".pagedjs_page");
+        const total = pages.length;
+        pages.forEach((pg, i) => {
+          const no = pg.querySelector(".rpt-pageno");
+          if (no) no.textContent = `Page ${i + 1} of ${total}`;
+        });
+        setPaged(total > 0);
+      } catch (err) {
+        console.error("[report paged.js]", err);
+        if (!cancelled) setPaged(false); // keep table fallback
+      }
+    }
+
+    paginate();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHeader, showFooter]);
 
   return (
     <div className="min-h-screen bg-[#eef1ee]">
@@ -32,9 +123,38 @@ export function ReportPrintView(props: ReportSheetProps) {
           </button>
         </div>
       </div>
-      <div className="py-6">
-        <ReportSheet {...props} showHeader={showHeader} showFooter={showFooter} />
+
+      <style>{`
+        .report-paged .pagedjs_page { background:#fff; margin:0 auto 16px; box-shadow:0 1px 8px rgba(0,0,0,.12); }
+        @media print { .report-paged .pagedjs_page { box-shadow:none; margin:0; } }
+      `}</style>
+
+      {/* Hidden source that paged.js paginates (running letterhead + content). */}
+      <div
+        ref={sourceRef}
+        aria-hidden
+        className="no-print"
+        style={{ position: "absolute", left: -99999, top: 0, width: `${contentWidthMm}mm`, visibility: "hidden" }}
+      >
+        <div className="rpt-header">{showHeader && <PrintHeader headerUrl={props.headerUrl} lab={props.lab} />}</div>
+        <div className="rpt-footer">
+          <div className="rpt-pageno" style={{ textAlign: "center", fontSize: 9, fontStyle: "italic", color: "#647067", marginBottom: "1mm" }} />
+          {showFooter && <PrintFooter footerUrl={props.footerUrl} lab={props.lab} />}
+        </div>
+        <div className="rpt-content">
+          <ReportBody cal={props.cal} patient={props.patient} visit={props.visit} entries={props.entries} signatories={props.signatories} qrDataUrl={props.qrDataUrl} publicUrl={props.publicUrl} />
+        </div>
       </div>
+
+      {/* Paged.js output (shown once ready). */}
+      <div ref={targetRef} className="report-paged" style={{ display: paged ? "block" : "none" }} />
+
+      {/* Fallback: native table-based report until paged.js is ready or if it fails. */}
+      {!paged && (
+        <div className="py-6">
+          <ReportSheet {...props} showHeader={showHeader} showFooter={showFooter} />
+        </div>
+      )}
     </div>
   );
 }

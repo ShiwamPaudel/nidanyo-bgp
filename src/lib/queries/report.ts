@@ -8,7 +8,7 @@ import {
   reportLinks,
   reportDispatches,
   bills,
-  labAssets,
+  reportSignatories,
   departments,
   tests,
 } from "@/db/schema";
@@ -48,10 +48,13 @@ export async function getReportData(labId: string, visitId: string) {
   const noteByTest = new Map(testRows.map((t) => [t.id, t.description ?? null]));
   const methodByTest = new Map(testRows.map((t) => [t.id, t.method ?? null]));
 
-  // Signatures of approvers
-  const sigIds = [...new Set(entries.map((e) => e.signatureAssetId).filter(Boolean))] as string[];
-  const sigRows = sigIds.length ? await db.select().from(labAssets).where(inArray(labAssets.id, sigIds)) : [];
-  const sigById = new Map(sigRows.map((s) => [s.id, s.url]));
+  // Report signatories — admin-managed, shown at the end of the report,
+  // independent of who approved the results.
+  const signatories = await db
+    .select()
+    .from(reportSignatories)
+    .where(and(eq(reportSignatories.labId, labId), eq(reportSignatories.isActive, true)))
+    .orderBy(asc(reportSignatories.displayOrder), asc(reportSignatories.createdAt));
 
   const { lab, settings } = await getLab(labId);
   const [headerAsset, footerAsset] = await Promise.all([
@@ -69,6 +72,7 @@ export async function getReportData(labId: string, visitId: string) {
     settings,
     headerUrl: headerAsset?.url ?? null,
     footerUrl: footerAsset?.url ?? null,
+    signatories: signatories.map((s) => ({ id: s.id, name: s.name, description: s.description, url: s.url })),
     link,
     dispatches,
     entries: entries.map((e) => ({
@@ -77,7 +81,6 @@ export async function getReportData(labId: string, visitId: string) {
       department: deptByTest.get(e.testId) ?? null,
       note: noteByTest.get(e.testId) ?? null,
       method: methodByTest.get(e.testId) ?? null,
-      signatureUrl: e.signatureAssetId ? sigById.get(e.signatureAssetId) ?? null : null,
     })),
   };
 }

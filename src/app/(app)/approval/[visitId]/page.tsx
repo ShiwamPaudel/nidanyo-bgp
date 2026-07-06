@@ -32,7 +32,7 @@ export default async function ApprovalReviewPage({ params }: { params: Promise<{
         actions={
           <>
             <Link href="/approval" className={buttonVariants({ variant: "outline" })}><ArrowLeft className="size-4" /> Back</Link>
-            {hasSubmitted && <ApprovalActions visitId={visitId} hasSignature={!!user.signatureAssetId} dueRemaining={due} />}
+            {hasSubmitted && <ApprovalActions visitId={visitId} dueRemaining={due} />}
           </>
         }
       />

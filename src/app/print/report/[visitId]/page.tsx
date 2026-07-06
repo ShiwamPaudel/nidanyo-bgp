@@ -29,6 +29,7 @@ export default async function ReportPrintPage({ params }: { params: Promise<{ vi
       patient={{ fullName: data.patient!.fullName, code: data.patient!.code, gender: data.patient!.gender, ageValue: data.patient!.ageValue, ageUnit: data.patient!.ageUnit, phone: data.patient!.phone, referredBy: data.patient!.referredBy }}
       visit={{ code: data.visit.code, referredBy: data.visit.referredBy, visitDate: data.visit.visitDate }}
       entries={data.entries as unknown as ReportEntry[]}
+      signatories={data.signatories}
       qrDataUrl={qr}
       publicUrl={publicUrl}
       cal={(data.settings?.calendarSystem as "AD" | "BS") ?? "AD"}
