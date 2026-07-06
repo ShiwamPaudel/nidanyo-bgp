@@ -82,8 +82,8 @@ export default async function LoginPage() {
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/logo.png"
-            alt="Logo"
+            src="/bgplogo.png"
+            alt="Buddhi Ganesh Pathology"
             className="mb-6 w-full rounded-2xl object-cover shadow-sm ring-1 ring-black/5"
           />
           <div className="space-y-1.5">

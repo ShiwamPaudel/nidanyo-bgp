@@ -7,7 +7,7 @@ import { NavigationLoader } from "./navigation-loader";
 import { Menu, X, LogOut, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { cn, initials } from "@/lib/utils";
-import { Logo, DropletMark } from "@/components/brand/logo";
+import { Logo } from "@/components/brand/logo";
 import { Badge } from "@/components/ui/badge";
 import { visibleNav } from "@/lib/nav";
 import type { PermissionKey } from "@/lib/rbac/permissions";
@@ -42,7 +42,7 @@ export function AppShell({
 
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-card lg:flex">
-        <SidebarBody sections={sections} badges={badges} labName={labName} />
+        <SidebarBody sections={sections} badges={badges} />
       </aside>
 
       {/* Mobile drawer */}
@@ -60,7 +60,6 @@ export function AppShell({
             <SidebarBody
               sections={sections}
               badges={badges}
-              labName={labName}
               onNavigate={() => setMobileOpen(false)}
             />
           </aside>
@@ -79,12 +78,10 @@ export function AppShell({
 function SidebarBody({
   sections,
   badges,
-  labName,
   onNavigate,
 }: {
   sections: ReturnType<typeof visibleNav>;
   badges: Record<string, number>;
-  labName: string;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -131,12 +128,6 @@ function SidebarBody({
           </div>
         ))}
       </nav>
-      <div className="border-t border-border p-3">
-        <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
-          <DropletMark size={18} />
-          <p className="truncate text-xs font-medium text-muted-foreground">{labName}</p>
-        </div>
-      </div>
     </>
   );
 }
@@ -156,7 +147,6 @@ function Topbar({ user, labName, onMenu }: { user: ShellUser; labName: string; o
       </div>
       <div className="hidden lg:block">
         <p className="text-sm font-semibold text-foreground">{labName}</p>
-        <p className="text-xs text-muted-foreground">Laboratory workspace</p>
       </div>
       <div className="ml-auto">
         <UserMenu user={user} />
