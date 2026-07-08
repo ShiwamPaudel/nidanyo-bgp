@@ -111,9 +111,11 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
         if (!g) continue;
         const memberIds = (itemsByGroup.get(g.id) ?? []).filter((id) => testById.has(id));
         const price =
-          g.pricingMode === "sum"
-            ? round2(memberIds.reduce((s, id) => s + (testById.get(id)?.price ?? 0), 0))
-            : round2(g.groupPrice);
+          item.priceOverride != null
+            ? round2(item.priceOverride)
+            : g.pricingMode === "sum"
+              ? round2(memberIds.reduce((s, id) => s + (testById.get(id)?.price ?? 0), 0))
+              : round2(g.groupPrice);
         for (const id of memberIds) seenTests.add(id);
         lines.push({ label: g.name, kind: "group", lineTotal: price, testIds: memberIds, groupId: g.id, groupName: g.name });
       }

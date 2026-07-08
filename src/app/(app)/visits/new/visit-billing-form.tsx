@@ -97,7 +97,7 @@ export function VisitBillingForm({
         patientId: patient?.id ?? null,
         newPatient: !patient && newPatient ? { ...newPatient, email: newPatient.email || null, phone: newPatient.phone || null, address: newPatient.address || null } : null,
         referredBy: referredBy || null,
-        items: selected.map((s) => ({ kind: s.kind, refId: s.refId, priceOverride: s.kind === "test" ? s.price : null })),
+        items: selected.map((s) => ({ kind: s.kind, refId: s.refId, priceOverride: s.price })),
         discountAmount: Math.round(disc * 100) / 100,
         discountReason: discountReason || null,
         paymentAmount: payAmount || 0,
@@ -188,19 +188,15 @@ export function VisitBillingForm({
                   <li key={s.key} className="flex items-center justify-between gap-2 text-sm">
                     <span className="flex items-center gap-1.5 truncate">{s.kind === "group" && <Layers className="size-3 shrink-0 text-info" />}<span className="truncate">{s.label}</span></span>
                     <span className="flex items-center gap-2">
-                      {s.kind === "test" ? (
-                        <Input
-                          type="number"
-                          min={0}
-                          value={s.price || ""}
-                          onChange={(e) => setItemPrice(s.key, Number(e.target.value))}
-                          className="h-7 w-20 text-right tabular"
-                          aria-label={`Rate for ${s.label}`}
-                          title="Edit this test's rate for this bill only"
-                        />
-                      ) : (
-                        <span className="tabular">{money(s.price)}</span>
-                      )}
+                      <Input
+                        type="number"
+                        min={0}
+                        value={s.price || ""}
+                        onChange={(e) => setItemPrice(s.key, Number(e.target.value))}
+                        className="h-7 w-24 text-right tabular"
+                        aria-label={`Rate for ${s.label}`}
+                        title="Edit this item's rate for this bill only"
+                      />
                       <button onClick={() => removeItem(s.key)} className="text-muted-foreground hover:text-destructive" aria-label="Remove"><X className="size-3.5" /></button>
                     </span>
                   </li>
