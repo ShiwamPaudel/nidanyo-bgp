@@ -60,17 +60,39 @@ export async function listVisits(
 }
 
 export async function getVisitDetail(labId: string, visitId: string) {
-  const visit = (await db.select().from(visits).where(and(eq(visits.id, visitId), eq(visits.labId, labId)))).at(0);
-  if (!visit) return null;
-  const patient = (await db.select().from(patients).where(eq(patients.id, visit.patientId))).at(0);
-  const bill = (await db.select().from(bills).where(eq(bills.visitId, visitId))).at(0);
-  const items = bill ? await db.select().from(billItems).where(eq(billItems.billId, bill.id)) : [];
-  const vTests = await db.select().from(visitTests).where(eq(visitTests.visitId, visitId));
-  const payRows = bill ? await db.select().from(payments).where(eq(payments.billId, bill.id)).orderBy(desc(payments.paidAt)) : [];
-  const sampleRows = await db.select().from(samples).where(eq(samples.visitId, visitId));
-  const link = (await db.select().from(reportLinks).where(eq(reportLinks.visitId, visitId))).at(0);
+  // Round-trip 1: everything keyed directly off visitId, sent as a single
+  // libSQL batch (one HTTP request) instead of five sequential queries.
+  const [visitRows, billRows, vTests, sampleRows, linkRows] = await db.batch([
+    db.select().from(visits).where(and(eq(visits.id, visitId), eq(visits.labId, labId))),
+    db.select().from(bills).where(eq(bills.visitId, visitId)),
+    db.select().from(visitTests).where(eq(visitTests.visitId, visitId)),
+    db.select().from(samples).where(eq(samples.visitId, visitId)),
+    db.select().from(reportLinks).where(eq(reportLinks.visitId, visitId)),
+  ]);
 
-  return { visit, patient, bill, items, visitTests: vTests, payments: payRows, samples: sampleRows, reportLink: link };
+  const visit = visitRows.at(0);
+  if (!visit) return null;
+  const bill = billRows.at(0);
+
+  // Round-trip 2: rows that depend on visit.patientId / bill.id. When there is
+  // no bill, billId "" matches nothing so items/payments come back empty —
+  // identical to the previous `bill ? … : []` behaviour.
+  const [patientRows, items, payRows] = await db.batch([
+    db.select().from(patients).where(eq(patients.id, visit.patientId)),
+    db.select().from(billItems).where(eq(billItems.billId, bill?.id ?? "")),
+    db.select().from(payments).where(eq(payments.billId, bill?.id ?? "")).orderBy(desc(payments.paidAt)),
+  ]);
+
+  return {
+    visit,
+    patient: patientRows.at(0),
+    bill,
+    items: bill ? items : [],
+    visitTests: vTests,
+    payments: bill ? payRows : [],
+    samples: sampleRows,
+    reportLink: linkRows.at(0),
+  };
 }
 
 export async function getBillForPrint(labId: string, visitId: string) {

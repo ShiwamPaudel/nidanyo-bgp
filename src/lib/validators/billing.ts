@@ -19,7 +19,15 @@ export const newVisitSchema = z
     referringDoctorId: z.string().optional().nullable(),
     priority: z.enum(["normal", "urgent"]).optional(),
     items: z
-      .array(z.object({ kind: z.enum(["test", "group"]), refId: z.string().min(1) }))
+      .array(
+        z.object({
+          kind: z.enum(["test", "group"]),
+          refId: z.string().min(1),
+          // Optional per-bill rate override for an individual test. Snapshotted
+          // onto the visit/bill only — never written back to the test catalog.
+          priceOverride: z.coerce.number().min(0).max(10_000_000).optional().nullable(),
+        }),
+      )
       .min(1, "Add at least one test or profile"),
     discountAmount: z.coerce.number().min(0).default(0),
     discountReason: z.string().trim().max(160).optional().nullable(),

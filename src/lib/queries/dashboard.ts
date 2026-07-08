@@ -19,6 +19,8 @@ export async function getDashboardStats(labId: string) {
   const s = Math.floor(start.getTime() / 1000);
   const e = Math.floor(end.getTime() / 1000);
 
+  // Ten independent aggregates sent as a single libSQL batch (one HTTP
+  // request) instead of ten separate round-trips.
   const [
     todayPatients,
     todayVisits,
@@ -30,7 +32,7 @@ export async function getDashboardStats(labId: string) {
     pendingApproval,
     readyDispatch,
     criticalCount,
-  ] = await Promise.all([
+  ] = await db.batch([
     db
       .select({ n: sql<number>`count(*)` })
       .from(patients)

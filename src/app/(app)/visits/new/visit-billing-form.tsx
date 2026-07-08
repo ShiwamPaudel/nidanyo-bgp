@@ -74,6 +74,11 @@ export function VisitBillingForm({
     setSelected((s) => [...s, { key, kind, refId, label, price }]);
   }
   function removeItem(key: string) { setSelected((s) => s.filter((x) => x.key !== key)); }
+  // Per-bill rate edit for an individual test. Affects only this bill's line —
+  // the test's catalog price is never changed.
+  function setItemPrice(key: string, price: number) {
+    setSelected((s) => s.map((x) => (x.key === key ? { ...x, price: Math.max(0, price || 0) } : x)));
+  }
 
   const subtotal = selected.reduce((s, x) => s + x.price, 0);
   const disc = Math.min(discountType === "percent" ? (subtotal * (discountValue || 0)) / 100 : discountValue || 0, subtotal);
@@ -92,7 +97,7 @@ export function VisitBillingForm({
         patientId: patient?.id ?? null,
         newPatient: !patient && newPatient ? { ...newPatient, email: newPatient.email || null, phone: newPatient.phone || null, address: newPatient.address || null } : null,
         referredBy: referredBy || null,
-        items: selected.map((s) => ({ kind: s.kind, refId: s.refId })),
+        items: selected.map((s) => ({ kind: s.kind, refId: s.refId, priceOverride: s.kind === "test" ? s.price : null })),
         discountAmount: Math.round(disc * 100) / 100,
         discountReason: discountReason || null,
         paymentAmount: payAmount || 0,
@@ -182,7 +187,22 @@ export function VisitBillingForm({
                 {selected.map((s) => (
                   <li key={s.key} className="flex items-center justify-between gap-2 text-sm">
                     <span className="flex items-center gap-1.5 truncate">{s.kind === "group" && <Layers className="size-3 shrink-0 text-info" />}<span className="truncate">{s.label}</span></span>
-                    <span className="flex items-center gap-2"><span className="tabular">{money(s.price)}</span><button onClick={() => removeItem(s.key)} className="text-muted-foreground hover:text-destructive" aria-label="Remove"><X className="size-3.5" /></button></span>
+                    <span className="flex items-center gap-2">
+                      {s.kind === "test" ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          value={s.price || ""}
+                          onChange={(e) => setItemPrice(s.key, Number(e.target.value))}
+                          className="h-7 w-20 text-right tabular"
+                          aria-label={`Rate for ${s.label}`}
+                          title="Edit this test's rate for this bill only"
+                        />
+                      ) : (
+                        <span className="tabular">{money(s.price)}</span>
+                      )}
+                      <button onClick={() => removeItem(s.key)} className="text-muted-foreground hover:text-destructive" aria-label="Remove"><X className="size-3.5" /></button>
+                    </span>
                   </li>
                 ))}
               </ul>

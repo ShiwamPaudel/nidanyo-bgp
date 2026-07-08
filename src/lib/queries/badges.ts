@@ -1,14 +1,13 @@
 import "server-only";
 import { db } from "@/db/client";
-import { visits, bills, samples, resultEntries, reportLinks } from "@/db/schema";
+import { visits, bills, samples, resultEntries } from "@/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
 
 /** Sidebar badge counts for pending work in each queue. */
 export async function getNavBadges(labId: string): Promise<Record<string, number>> {
-  const count = (where: ReturnType<typeof and> | undefined, table: typeof visits | typeof bills | typeof samples | typeof resultEntries | typeof reportLinks) =>
-    db.select({ n: sql<number>`count(*)` }).from(table as never).where(where as never);
-
-  const [dues, samplesWaiting, resultsPending, approvalPending, dispatchReady] = await Promise.all([
+  // Five independent counts sent as a single libSQL batch (one HTTP request)
+  // rather than five separate round-trips. Runs on every app page (layout).
+  const [dues, samplesWaiting, resultsPending, approvalPending, dispatchReady] = await db.batch([
     db
       .select({ n: sql<number>`count(*)` })
       .from(bills)

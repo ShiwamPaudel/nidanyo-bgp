@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
+import { newId } from "@/db/schema/_shared";
 import {
   visits,
   visitTests,
@@ -93,13 +94,18 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
     type Line = { label: string; kind: "test" | "group"; lineTotal: number; testIds: string[]; groupId?: string; groupName?: string };
     const lines: Line[] = [];
     const seenTests = new Set<string>();
+    // Per-bill unit price for individual tests (catalog price unless the biller
+    // overrode the rate at billing time). Only used for this visit's snapshots.
+    const unitPriceByTest = new Map<string, number>();
 
     for (const item of d.items) {
       if (item.kind === "test") {
         const t = testById.get(item.refId);
         if (!t || seenTests.has(t.id)) continue;
         seenTests.add(t.id);
-        lines.push({ label: t.name, kind: "test", lineTotal: round2(t.price), testIds: [t.id] });
+        const unit = item.priceOverride != null ? round2(item.priceOverride) : round2(t.price);
+        unitPriceByTest.set(t.id, unit);
+        lines.push({ label: t.name, kind: "test", lineTotal: unit, testIds: [t.id] });
       } else {
         const g = groupById.get(item.refId);
         if (!g) continue;
@@ -172,32 +178,38 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
       }
     }
 
-    for (const t of orderedTests) {
+    // Build every visit-test + result-entry row up front. Because ids are
+    // generated in JS, a result entry can reference its visit test without a
+    // round-trip, so both sets go in as one atomic batch instead of 2×N inserts.
+    const visitTestRows = orderedTests.map((t) => {
       const grp = groupOfTest.get(t.id);
-      const [vt] = await db
-        .insert(visitTests)
-        .values({
-          visitId: visit.id,
-          testId: t.id,
-          testName: t.name,
-          departmentId: t.departmentId,
-          sampleTypeId: t.sampleTypeId,
-          groupId: grp?.groupId ?? null,
-          groupName: grp?.groupName ?? null,
-          price: t.price,
-          status: "ordered",
-        })
-        .returning({ id: visitTests.id });
-
-      await db.insert(resultEntries).values({
-        labId: user.labId,
+      return {
+        id: newId(),
         visitId: visit.id,
-        visitTestId: vt.id,
         testId: t.id,
         testName: t.name,
-        sampleId: t.sampleTypeId ? sampleIdByType.get(t.sampleTypeId) : null,
-        status: "pending",
-      });
+        departmentId: t.departmentId,
+        sampleTypeId: t.sampleTypeId,
+        groupId: grp?.groupId ?? null,
+        groupName: grp?.groupName ?? null,
+        price: unitPriceByTest.get(t.id) ?? t.price,
+        status: "ordered" as const,
+      };
+    });
+    const resultEntryRows = visitTestRows.map((vt) => ({
+      labId: user.labId,
+      visitId: visit.id,
+      visitTestId: vt.id,
+      testId: vt.testId,
+      testName: vt.testName,
+      sampleId: vt.sampleTypeId ? sampleIdByType.get(vt.sampleTypeId) : null,
+      status: "pending" as const,
+    }));
+    if (visitTestRows.length > 0) {
+      await db.batch([
+        db.insert(visitTests).values(visitTestRows),
+        db.insert(resultEntries).values(resultEntryRows),
+      ]);
     }
 
     // Insert bill
@@ -222,17 +234,17 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
       })
       .returning({ id: bills.id });
 
-    // Bill items
-    for (const l of lines) {
-      await db.insert(billItems).values({
+    // Bill items — single multi-row insert instead of one insert per line.
+    await db.insert(billItems).values(
+      lines.map((l) => ({
         billId: bill.id,
         label: l.label,
         kind: l.kind,
         qty: 1,
         unitPrice: l.lineTotal,
         lineTotal: l.lineTotal,
-      });
-    }
+      })),
+    );
 
     // Optional initial payment
     if ((d.paymentAmount ?? 0) > 0) {
