@@ -93,3 +93,32 @@ export async function getVisitResults(labId: string, visitId: string) {
     })),
   };
 }
+
+/**
+ * How many stored values on this visit were saved without a reference range
+ * that the catalog could now supply. Drives whether the "Sync reference ranges"
+ * button is worth showing — it stays hidden on the overwhelming majority of
+ * visits, where nothing is missing.
+ *
+ * A value counts only when BOTH are true: nothing was captured on the value,
+ * and the test/parameter now actually has a range to give.
+ */
+export async function countSyncableRanges(labId: string, visitId: string): Promise<number> {
+  const rows = await db.all<{ n: number }>(sql`
+    select count(*) as n
+    from result_values rv
+    join result_entries re on rv.result_entry_id = re.id
+    left join tests t on re.test_id = t.id
+    left join test_parameters tp on rv.parameter_id = tp.id
+    where re.visit_id = ${visitId}
+      and re.lab_id = ${labId}
+      and rv.ref_low is null
+      and rv.ref_high is null
+      and (rv.ref_text is null or trim(rv.ref_text) in ('', '—', '-'))
+      and case when rv.parameter_id is not null
+        then (tp.ref_low is not null or tp.ref_high is not null or (tp.ref_range_text is not null and trim(tp.ref_range_text) <> ''))
+        else (t.ref_low is not null or t.ref_high is not null or (t.ref_range_text is not null and trim(t.ref_range_text) <> ''))
+      end
+  `);
+  return Number(rows[0]?.n ?? 0);
+}

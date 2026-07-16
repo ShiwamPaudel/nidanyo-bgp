@@ -17,6 +17,24 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 }
 
 /**
+ * A real bcrypt hash of a fixed string, at the same cost as a live password.
+ * Compared against when an email is unknown so the "no such user" path costs
+ * the same wall-clock time as "wrong password" — without it, response timing
+ * reveals which email addresses have accounts.
+ */
+const DUMMY_HASH = bcrypt.hashSync("nidanyo-timing-equalizer", ROUNDS);
+
+/** Always returns false; exists purely to burn the same time as a real compare. */
+export async function dummyHashCompare(plain: string): Promise<boolean> {
+  try {
+    await bcrypt.compare(plain, DUMMY_HASH);
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
  * URL-safe, non-guessable token for public report links.
  * 32 bytes -> ~43 chars base64url. Not derived from any internal id.
  */

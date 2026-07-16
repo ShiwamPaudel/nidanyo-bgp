@@ -2,9 +2,8 @@ import { redirect } from "next/navigation";
 import { requireUser, hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { listTransactions, getTestRevenue, getEodSummary } from "@/lib/queries/finance";
-import { getLab, getLabAsset } from "@/lib/queries/lab";
+import { getLab } from "@/lib/queries/lab";
 import { PrintToolbar } from "@/components/print/print-sheet";
-import { PrintHeader } from "@/components/print/letterhead";
 import { money } from "@/lib/utils";
 import { fmtDate, fmtDateTime } from "@/lib/datetime";
 
@@ -18,14 +17,12 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
   const from = get("from");
   const to = get("to");
 
-  const [{ rows, total }, testRev, eod, { lab, settings }, headerAsset] = await Promise.all([
+  const [{ rows, total }, testRev, eod, { lab, settings }] = await Promise.all([
     listTransactions(user.labId, { from, to, mode: get("mode"), q: get("q") }),
     getTestRevenue(user.labId, from, to),
     getEodSummary(user.labId, from, to),
     getLab(user.labId),
-    getLabAsset(user.labId, "report_header"),
   ]);
-  const labInfo = { name: lab?.name ?? "Laboratory", address: settings?.address, phone: settings?.phone, email: settings?.email, website: settings?.website, panVat: settings?.panVat };
   const rangeStart = from ? new Date(from) : new Date();
   const rangeEnd = to ? new Date(to) : rangeStart;
   const rangeLabel = `${fmtDate(rangeStart)} – ${fmtDate(rangeEnd)}`;
@@ -37,7 +34,13 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
       <PrintToolbar />
       <div className="py-6">
         <div className="mx-auto bg-white text-[#0e1b14] shadow-card print-sheet" style={{ width: "297mm", minHeight: "210mm", padding: "10mm 12mm" }}>
-          <PrintHeader headerUrl={headerAsset?.url} lab={labInfo} />
+          {/* Internal finance document — no letterhead artwork. A plain text
+              line identifies the lab; the uploaded header/footer are reserved
+              for patient-facing bills and reports. */}
+          <div className="flex items-end justify-between border-b border-[#0E1B14]/15 pb-2">
+            <p className="text-[13px] font-bold text-[#0e1b14]">{lab?.name ?? "Laboratory"}</p>
+            {settings?.panVat && <p className="text-[11px] text-[#647067]">PAN/VAT: {settings.panVat}</p>}
+          </div>
 
           <div className="mt-3 flex items-end justify-between">
             <div>

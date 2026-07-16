@@ -23,6 +23,27 @@ export const counters = sqliteTable(
   }),
 );
 
+/**
+ * rate_limits — fixed-window counters for abuse protection (login attempts…).
+ * Keyed by an opaque string (e.g. "login:ip:1.2.3.4"). Stored in the DB rather
+ * than memory so the limit holds across serverless instances and restarts.
+ */
+export const rateLimits = sqliteTable(
+  "rate_limits",
+  {
+    id: idCol(),
+    key: text("key").notNull().unique(),
+    count: integer("count").notNull().default(0),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    expiresIdx: index("rate_limits_expires_idx").on(t.expiresAt),
+  }),
+);
+
 /** sms_logs — every SMS attempt with provider status for retry/audit. */
 export const smsLogs = sqliteTable(
   "sms_logs",
