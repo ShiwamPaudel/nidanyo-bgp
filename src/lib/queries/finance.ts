@@ -2,12 +2,23 @@ import "server-only";
 import { db } from "@/db/client";
 import { payments, bills, visits, patients, visitTests } from "@/db/schema";
 import { and, desc, eq, gte, lte, sql, ne, like, or } from "drizzle-orm";
+import { labYmd, labDayBounds, parseLabYmd } from "@/lib/datetime";
 
+/**
+ * Resolve "from"/"to" (YYYY-MM-DD) into the exact instants that day begins and
+ * ends AT THE LAB.
+ *
+ * Previously this did `new Date(from)` + `setHours(0,0,0,0)`, which resolved
+ * against the *server's* clock (UTC), so an End-of-Day for the 17th actually
+ * covered 05:45 on the 17th → 05:44 on the 18th, Nepal time. Cash counted at
+ * the counter would not match the report.
+ */
 function dayRange(from?: string, to?: string) {
-  const start = from ? new Date(from) : new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = to ? new Date(to) : new Date(from ?? new Date());
-  end.setHours(23, 59, 59, 999);
+  const today = labYmd(new Date());
+  const f = (from && parseLabYmd(from)) || today;
+  const t = (to && parseLabYmd(to)) || f;
+  const { start } = labDayBounds(f.y, f.m, f.d);
+  const { end } = labDayBounds(t.y, t.m, t.d);
   return { s: Math.floor(start.getTime() / 1000), e: Math.floor(end.getTime() / 1000), start, end };
 }
 

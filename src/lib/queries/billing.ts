@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/db/client";
 import { visits, bills, patients, visitTests, billItems, payments, samples, reportLinks } from "@/db/schema";
 import { and, desc, eq, like, or, sql, gte, lte } from "drizzle-orm";
+import { labDayBounds, parseLabYmd } from "@/lib/datetime";
 
 export async function listVisits(
   labId: string,
@@ -15,12 +16,11 @@ export async function listVisits(
   if (term) conds.push(or(like(visits.code, term), like(patients.fullName, term), like(patients.phone, term), like(bills.code, term))!);
   if (opts.status && opts.status !== "all") conds.push(eq(visits.status, opts.status as never));
   if (opts.payment && opts.payment !== "all") conds.push(eq(bills.paymentStatus, opts.payment as never));
-  if (opts.from) conds.push(gte(visits.visitDate, new Date(opts.from)));
-  if (opts.to) {
-    const end = new Date(opts.to);
-    end.setHours(23, 59, 59, 999);
-    conds.push(lte(visits.visitDate, end));
-  }
+  // Date filters are calendar days at the lab, not on the server's clock.
+  const fromYmd = opts.from ? parseLabYmd(opts.from) : null;
+  if (fromYmd) conds.push(gte(visits.visitDate, labDayBounds(fromYmd.y, fromYmd.m, fromYmd.d).start));
+  const toYmd = opts.to ? parseLabYmd(opts.to) : null;
+  if (toYmd) conds.push(lte(visits.visitDate, labDayBounds(toYmd.y, toYmd.m, toYmd.d).end));
   const where = and(...conds);
 
   const [rows, countRow] = await Promise.all([

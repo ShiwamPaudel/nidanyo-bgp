@@ -12,7 +12,7 @@ import {
   resultValues,
 } from "@/db/schema";
 import { and, eq, gte, lte, sql, desc, ne } from "drizzle-orm";
-import { dayBounds } from "@/lib/datetime";
+import { dayBounds, labYmd, labDayBounds, labDaysAgo } from "@/lib/datetime";
 
 export async function getDashboardStats(labId: string) {
   const { start, end } = dayBounds();
@@ -81,32 +81,46 @@ export async function getDashboardStats(labId: string) {
   };
 }
 
-/** Revenue collected per day for the last N days. */
+/** Revenue collected per day for the last N days (lab-local days). */
 export async function getRevenueTrend(labId: string, days = 14) {
-  const since = new Date();
-  since.setDate(since.getDate() - (days - 1));
-  since.setHours(0, 0, 0, 0);
+  // Walk back N lab-local days and start at that day's local midnight.
+  const todayYmd = labYmd(new Date());
+  const anchor = Date.UTC(todayYmd.y, todayYmd.m - 1, todayYmd.d);
+  const firstDay = new Date(anchor - (days - 1) * 86400000);
+  const { start: since } = labDayBounds(
+    firstDay.getUTCFullYear(),
+    firstDay.getUTCMonth() + 1,
+    firstDay.getUTCDate(),
+  );
   const sinceSec = Math.floor(since.getTime() / 1000);
 
   const rows = await db
     .select({
-      day: sql<string>`date(${payments.paidAt}, 'unixepoch', 'localtime')`,
+      // '+5 hours','+45 minutes' — NOT 'localtime': this runs on Turso's server,
+      // which is UTC, so 'localtime' silently grouped payments into UTC days.
+      day: sql<string>`date(${payments.paidAt}, 'unixepoch', '+5 hours', '+45 minutes')`,
       total: sql<number>`coalesce(sum(${payments.amount}),0)`,
     })
     .from(payments)
     .where(and(eq(payments.labId, labId), ne(payments.kind, "refund"), sql`${payments.paidAt} >= ${sinceSec}`))
-    .groupBy(sql`date(${payments.paidAt}, 'unixepoch', 'localtime')`);
+    .groupBy(sql`date(${payments.paidAt}, 'unixepoch', '+5 hours', '+45 minutes')`);
 
   const map = new Map(rows.map((r) => [r.day, Number(r.total)]));
   const out: { day: string; label: string; total: number }[] = [];
   for (let i = 0; i < days; i++) {
-    const d = new Date(since);
-    d.setDate(since.getDate() + i);
+    // Keys must be lab-local calendar days to match what SQL now groups by.
+    const d = new Date(anchor - (days - 1 - i) * 86400000);
     const key = d.toISOString().slice(0, 10);
-    out.push({ day: key, label: d.toLocaleDateString("en", { day: "2-digit", month: "short" }), total: map.get(key) ?? 0 });
+    out.push({
+      day: key,
+      label: `${String(d.getUTCDate()).padStart(2, "0")} ${MONTHS[d.getUTCMonth()]}`,
+      total: map.get(key) ?? 0,
+    });
   }
   return out;
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Most performed tests (all time, top N). */
 export async function getTopTests(labId: string, limit = 6) {
@@ -137,17 +151,17 @@ export async function getCollectionByMode(labId: string) {
 
 /** Visit volume by hour of day (busiest hours) over the last N days. */
 export async function getPeakHours(labId: string, days = 30) {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  since.setHours(0, 0, 0, 0);
+  const since = labDaysAgo(days);
   const rows = await db
     .select({
-      hour: sql<string>`strftime('%H', ${visits.visitDate}, 'unixepoch', 'localtime')`,
+      // Shift to Nepal wall-clock before bucketing, or "busiest hour" is 5h45m
+      // out — a 7am rush would report as 1am.
+      hour: sql<string>`strftime('%H', ${visits.visitDate}, 'unixepoch', '+5 hours', '+45 minutes')`,
       n: sql<number>`count(*)`,
     })
     .from(visits)
     .where(and(eq(visits.labId, labId), ne(visits.status, "cancelled"), gte(visits.visitDate, since)))
-    .groupBy(sql`strftime('%H', ${visits.visitDate}, 'unixepoch', 'localtime')`);
+    .groupBy(sql`strftime('%H', ${visits.visitDate}, 'unixepoch', '+5 hours', '+45 minutes')`);
 
   const map = new Map(rows.map((r) => [Number(r.hour), Number(r.n)]));
   // Present a readable working-hours window (6am–9pm) plus rollups.
@@ -162,9 +176,7 @@ export async function getPeakHours(labId: string, days = 30) {
 
 /** Revenue (billed) grouped by referring doctor over the last N days. */
 export async function getRevenueByDoctor(labId: string, days = 30, limit = 8) {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  since.setHours(0, 0, 0, 0);
+  const since = labDaysAgo(days);
   const rows = await db
     .select({
       doctor: sql<string>`coalesce(nullif(${visits.referredBy}, ''), 'Self / Walk-in')`,

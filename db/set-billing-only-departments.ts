@@ -17,11 +17,15 @@ import { createClient } from "@libsql/client";
  * so it never needs to be run again.
  */
 
+// Names as they actually appear in the catalog. "Doctor Consultation" has no
+// possessive apostrophe there, so both spellings are listed rather than relying
+// on the normaliser to bridge the difference.
 const BILLING_ONLY = [
   "Dental",
   "Procedure",
   "Suture",
   "Radiology",
+  "Doctor Consultation",
   "Doctor's Consultation",
   "Physiotherapy",
   "Others",

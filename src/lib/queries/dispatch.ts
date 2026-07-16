@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/db/client";
 import { visits, patients, bills, reportLinks, reportDispatches, smsLogs } from "@/db/schema";
 import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
+import { labDayBounds, parseLabYmd } from "@/lib/datetime";
 
 /** Visits whose reports are approved (ready for / already dispatched). */
 export async function listReports(labId: string, opts: { q?: string; status?: string; from?: string; to?: string } = {}) {
@@ -9,12 +10,11 @@ export async function listReports(labId: string, opts: { q?: string; status?: st
   const statuses = opts.status === "dispatched" ? ["dispatched"] : opts.status === "ready" ? ["approved"] : ["approved", "dispatched"];
   const conds = [eq(visits.labId, labId), inArray(visits.status, statuses as never)];
   if (term) conds.push(or(like(visits.code, term), like(patients.fullName, term), like(patients.phone, term))!);
-  if (opts.from) conds.push(gte(visits.visitDate, new Date(opts.from)));
-  if (opts.to) {
-    const end = new Date(opts.to);
-    end.setHours(23, 59, 59, 999);
-    conds.push(lte(visits.visitDate, end));
-  }
+  // Date filters are calendar days at the lab, not on the server's clock.
+  const fromYmd = opts.from ? parseLabYmd(opts.from) : null;
+  if (fromYmd) conds.push(gte(visits.visitDate, labDayBounds(fromYmd.y, fromYmd.m, fromYmd.d).start));
+  const toYmd = opts.to ? parseLabYmd(opts.to) : null;
+  if (toYmd) conds.push(lte(visits.visitDate, labDayBounds(toYmd.y, toYmd.m, toYmd.d).end));
 
   const rows = await db
     .select({
