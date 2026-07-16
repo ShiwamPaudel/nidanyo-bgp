@@ -10,6 +10,12 @@ export const departments = sqliteTable("departments", {
     .references(() => labs.id),
   name: text("name").notNull(),
   displayOrder: integer("display_order").notNull().default(0),
+  /**
+   * Billing-only departments (Dental, Radiology, Consultation…) are charged on a
+   * bill but never produce a lab report from this system. Their tests get no
+   * result entry, and a visit made up solely of them carries no report QR.
+   */
+  billingOnly: integer("billing_only", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   ...timestamps,
 });

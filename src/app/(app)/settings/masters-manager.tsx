@@ -22,6 +22,7 @@ export interface MasterItem {
   id: string;
   name: string;
   isActive: boolean;
+  billingOnly?: boolean;
   colorHex?: string | null;
   qualification?: string | null;
   clinic?: string | null;
@@ -60,6 +61,7 @@ export function MastersManager({ kind, items, hint }: { kind: MasterKind; items:
                 <TH>Name</TH>
                 {kind === "doctor" && <><TH>Qualification</TH><TH>Clinic</TH><TH>Phone</TH></>}
                 {kind === "sampleType" && <TH>Color</TH>}
+                {kind === "department" && <TH>Type</TH>}
                 <TH>Status</TH>
                 <TH className="text-right">Actions</TH>
               </TR>
@@ -70,6 +72,7 @@ export function MastersManager({ kind, items, hint }: { kind: MasterKind; items:
                   <TD className="font-medium">{it.name}</TD>
                   {kind === "doctor" && <><TD className="text-muted-foreground">{it.qualification ?? "—"}</TD><TD className="text-muted-foreground">{it.clinic ?? "—"}</TD><TD className="text-muted-foreground tabular">{it.phone ?? "—"}</TD></>}
                   {kind === "sampleType" && <TD>{it.colorHex ? <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded-full" style={{ background: it.colorHex }} />{it.colorHex}</span> : "—"}</TD>}
+                  {kind === "department" && <TD>{it.billingOnly ? <Badge tone="neutral">Billing only</Badge> : <Badge tone="brand">Reportable</Badge>}</TD>}
                   <TD>{it.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="neutral">Inactive</Badge>}</TD>
                   <TD className="text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -107,18 +110,19 @@ function MasterForm({ kind, initial, onClose }: { kind: MasterKind; initial: Mas
   const cfg = CONFIG[kind];
   const [form, setForm] = useState({
     name: initial?.name ?? "",
+    billingOnly: initial?.billingOnly ?? false,
     colorHex: initial?.colorHex ?? "#075323",
     qualification: initial?.qualification ?? "",
     clinic: initial?.clinic ?? "",
     phone: initial?.phone ?? "",
     commissionPercent: initial?.commissionPercent ?? 0,
   });
-  const set = (k: keyof typeof form, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: keyof typeof form, v: string | number | boolean) => setForm((f) => ({ ...f, [k]: v }));
 
   function submit() {
     start(async () => {
       let res;
-      if (kind === "department") res = await saveDepartment({ id: initial?.id, name: form.name });
+      if (kind === "department") res = await saveDepartment({ id: initial?.id, name: form.name, billingOnly: form.billingOnly });
       else if (kind === "sampleType") res = await saveSampleType({ id: initial?.id, name: form.name, colorHex: form.colorHex });
       else res = await saveDoctor({ id: initial?.id, name: form.name, qualification: form.qualification, clinic: form.clinic, phone: form.phone, commissionPercent: Number(form.commissionPercent) });
       if (res.ok) { toast.success(res.message ?? "Saved"); onClose(); router.refresh(); }
@@ -131,6 +135,19 @@ function MasterForm({ kind, initial, onClose }: { kind: MasterKind; initial: Mas
       footer={<><Button variant="outline" onClick={onClose} disabled={pending}>Cancel</Button><Button onClick={submit} loading={pending}>Save</Button></>}>
       <div className="space-y-3">
         <Field label="Name" required><Input value={form.name} onChange={(e) => set("name", e.target.value)} autoFocus /></Field>
+        {kind === "department" && (
+          <Field label="Billing only" hint="Charged on the bill but produces no lab report — no result entry, and no report QR on a bill made up only of these. Use for Dental, Radiology, Consultation, Physiotherapy…">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.billingOnly}
+                onChange={(e) => set("billingOnly", e.target.checked)}
+                className="size-4 rounded border-border accent-brand-700"
+              />
+              This department is for billing only
+            </label>
+          </Field>
+        )}
         {kind === "sampleType" && (
           <Field label="Label color">
             <div className="flex items-center gap-2">

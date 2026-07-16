@@ -1,0 +1,1 @@
+ALTER TABLE `departments` ADD `billing_only` integer DEFAULT false NOT NULL;

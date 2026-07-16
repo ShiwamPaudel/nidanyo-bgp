@@ -19,6 +19,7 @@ import {
   resultEntries,
   paymentModes,
   labSettings,
+  departments,
 } from "@/db/schema";
 import { authorize } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
@@ -72,15 +73,20 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
     }
 
     // Resolve catalog
-    const [allTests, allGroups, allGroupItems, allSampleTypes, settingsRows] = await Promise.all([
+    const [allTests, allGroups, allGroupItems, allSampleTypes, settingsRows, allDepartments] = await Promise.all([
       db.select().from(tests).where(and(eq(tests.labId, user.labId), eq(tests.isActive, true))),
       db.select().from(testGroups).where(eq(testGroups.labId, user.labId)),
       db.select().from(testGroupItems),
       db.select().from(sampleTypes).where(eq(sampleTypes.labId, user.labId)),
       db.select().from(labSettings).where(eq(labSettings.labId, user.labId)),
+      db.select().from(departments).where(eq(departments.labId, user.labId)),
     ]);
     const settings = settingsRows.at(0);
     const testById = new Map(allTests.map((t) => [t.id, t]));
+    // Billing-only departments are charged but never reported on: they get no
+    // sample, no result entry, and cannot hold back the visit's report.
+    const billingOnlyDeptIds = new Set(allDepartments.filter((dep) => dep.billingOnly).map((dep) => dep.id));
+    const isReportable = (t: { departmentId: string | null }) => !t.departmentId || !billingOnlyDeptIds.has(t.departmentId);
     const groupById = new Map(allGroups.map((g) => [g.id, g]));
     const sampleTypeById = new Map(allSampleTypes.map((s) => [s.id, s]));
     const itemsByGroup = new Map<string, string[]>();
@@ -123,6 +129,13 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
 
     if (lines.length === 0) return fail("Add at least one test or profile.");
 
+    // A visit made up purely of billing-only lines (consultation, dental…) has
+    // nothing to collect, process or report.
+    const hasReportable = [...seenTests].some((id) => {
+      const t = testById.get(id);
+      return t ? isReportable(t) : false;
+    });
+
     const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
     const discount = round2(Math.min(d.discountAmount ?? 0, subtotal));
     const taxPercent = settings?.taxEnabled ? settings.taxPercent : 0;
@@ -143,16 +156,18 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
         patientId: patient.id,
         referredBy: d.referredBy ?? patient.referredBy ?? null,
         priority: d.priority ?? "normal",
-        status: "sample_pending",
+        status: hasReportable ? "sample_pending" : "registered",
         createdBy: user.id,
       })
       .returning({ id: visits.id });
 
     // Insert visit tests (expanded) + result entry stubs, grouped by sample type for samples
     const orderedTests = [...seenTests].map((id) => testById.get(id)!).filter(Boolean);
+    const reportableTests = orderedTests.filter(isReportable);
 
-    // Create one sample per distinct sample type
-    const distinctSampleTypeIds = [...new Set(orderedTests.map((t) => t.sampleTypeId).filter(Boolean))] as string[];
+    // Create one sample per distinct sample type — billing-only tests are never
+    // collected, so they must not open a sample.
+    const distinctSampleTypeIds = [...new Set(reportableTests.map((t) => t.sampleTypeId).filter(Boolean))] as string[];
     const sampleIdByType = new Map<string, string>();
     for (const stId of distinctSampleTypeIds) {
       const st = sampleTypeById.get(stId);
@@ -198,19 +213,25 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
         status: "ordered" as const,
       };
     });
-    const resultEntryRows = visitTestRows.map((vt) => ({
-      labId: user.labId,
-      visitId: visit.id,
-      visitTestId: vt.id,
-      testId: vt.testId,
-      testName: vt.testName,
-      sampleId: vt.sampleTypeId ? sampleIdByType.get(vt.sampleTypeId) : null,
-      status: "pending" as const,
-    }));
+    // Only reportable tests get a result entry. A billing-only line still bills
+    // and still appears as a visit test, but never enters the results queue —
+    // otherwise its stub would sit "pending" forever and block the visit's
+    // report from ever being released.
+    const resultEntryRows = visitTestRows
+      .filter((vt) => isReportable(vt))
+      .map((vt) => ({
+        labId: user.labId,
+        visitId: visit.id,
+        visitTestId: vt.id,
+        testId: vt.testId,
+        testName: vt.testName,
+        sampleId: vt.sampleTypeId ? sampleIdByType.get(vt.sampleTypeId) : null,
+        status: "pending" as const,
+      }));
     if (visitTestRows.length > 0) {
       await db.batch([
         db.insert(visitTests).values(visitTestRows),
-        db.insert(resultEntries).values(resultEntryRows),
+        ...(resultEntryRows.length > 0 ? [db.insert(resultEntries).values(resultEntryRows)] : []),
       ]);
     }
 
@@ -270,7 +291,8 @@ export async function createVisitWithBill(input: NewVisitInput): Promise<ActionR
       await recomputeBill(bill.id);
     }
 
-    await ensureReportLink(visit.id, user.labId);
+    // No reportable test ⇒ no report ⇒ no link, and therefore no QR on the bill.
+    if (hasReportable) await ensureReportLink(visit.id, user.labId);
     await audit(user, "visit.create", { entity: "visit", entityId: visit.id, summary: `Created visit ${visitCode} for ${patient.fullName}`, meta: { grandTotal } });
     await activity(user, "visit_created", `Created visit ${visitCode} for ${patient.fullName} (${lines.length} item${lines.length > 1 ? "s" : ""})`, { entity: "visit", entityId: visit.id });
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/db/client";
-import { reportLinks, resultEntries, bills, visits, patients, labs, labSettings } from "@/db/schema";
+import { reportLinks, resultEntries, bills, visits, patients, labs, labSettings, tests, departments } from "@/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { publicToken } from "@/lib/crypto";
 import { sendSms, reportReadyMessage } from "@/lib/sms";
@@ -20,10 +20,15 @@ export async function ensureReportLink(visitId: string, labId: string) {
 /** True when every non-cancelled result entry on the visit is approved (and at least one exists). */
 export async function isVisitFullyApproved(visitId: string) {
   const rows = await db
-    .select({ status: resultEntries.status })
+    .select({ status: resultEntries.status, billingOnly: departments.billingOnly })
     .from(resultEntries)
+    .leftJoin(tests, eq(resultEntries.testId, tests.id))
+    .leftJoin(departments, eq(tests.departmentId, departments.id))
     .where(and(eq(resultEntries.visitId, visitId), ne(resultEntries.status, "dispatched")));
-  const relevant = rows.filter((r) => r.status !== ("cancelled" as never));
+  // Billing-only tests (dental, consultation, radiology…) never get a result
+  // entered, so a stub left over from before the department was flagged — or
+  // from an older visit — must not hold the report back forever.
+  const relevant = rows.filter((r) => !r.billingOnly && r.status !== ("cancelled" as never));
   if (relevant.length === 0) return false;
   return relevant.every((r) => r.status === "approved");
 }

@@ -10,18 +10,20 @@ import { ActionResult, ok, fail, run } from "@/lib/action";
 import { audit } from "@/lib/audit";
 
 /* ── Departments ─────────────────────────────────────────────── */
-export async function saveDepartment(input: { id?: string; name: string; displayOrder?: number }): Promise<ActionResult> {
+export async function saveDepartment(input: { id?: string; name: string; displayOrder?: number; billingOnly?: boolean }): Promise<ActionResult> {
   return run(async () => {
     const user = await authorize(PERMISSIONS.SETTINGS_MANAGE);
     const name = input.name?.trim();
     if (!name) return fail("Department name is required.");
+    const billingOnly = input.billingOnly ?? false;
     if (input.id) {
-      await db.update(departments).set({ name, displayOrder: input.displayOrder ?? 0 }).where(and(eq(departments.id, input.id), eq(departments.labId, user.labId)));
+      await db.update(departments).set({ name, displayOrder: input.displayOrder ?? 0, billingOnly }).where(and(eq(departments.id, input.id), eq(departments.labId, user.labId)));
     } else {
-      await db.insert(departments).values({ labId: user.labId, name, displayOrder: input.displayOrder ?? 0 });
+      await db.insert(departments).values({ labId: user.labId, name, displayOrder: input.displayOrder ?? 0, billingOnly });
     }
-    await audit(user, "department.save", { entity: "department", summary: `Saved department ${name}` });
+    await audit(user, "department.save", { entity: "department", summary: `Saved department ${name}${billingOnly ? " (billing-only)" : ""}` });
     revalidatePath("/settings/departments");
+    revalidatePath("/billing");
     return ok(undefined, "Saved");
   });
 }

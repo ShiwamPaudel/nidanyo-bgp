@@ -130,19 +130,22 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
             </div>
           )}
 
-          {/* QR + status */}
-          <div className="mt-5 flex items-end justify-between gap-4 rounded-lg border border-[#DFE2E2] bg-[#F8FAF8] p-3">
-            <div className="text-[11px]">
-              <p className="font-semibold text-brand-700">Track your report</p>
-              <p className="text-[#647067]">Scan the QR or visit the link to check status & download once ready.</p>
-              {publicUrl && <p className="mt-1 break-all text-info">{publicUrl}</p>}
-              <p className="mt-1 font-medium" style={{ color: bill.dueAmount > 0 ? "#FF3131" : "#075323" }}>{statusLine}</p>
+          {/* QR + status — omitted entirely for billing-only visits (dental,
+              consultation, radiology…), which produce no report to track. */}
+          {publicUrl && (
+            <div className="mt-5 flex items-end justify-between gap-4 rounded-lg border border-[#DFE2E2] bg-[#F8FAF8] p-3">
+              <div className="text-[11px]">
+                <p className="font-semibold text-brand-700">Track your report</p>
+                <p className="text-[#647067]">Scan the QR or visit the link to check status & download once ready.</p>
+                <p className="mt-1 break-all text-info">{publicUrl}</p>
+                <p className="mt-1 font-medium" style={{ color: bill.dueAmount > 0 ? "#FF3131" : "#075323" }}>{statusLine}</p>
+              </div>
+              {qr && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={qr} alt="Report QR" className="size-[88px] shrink-0" />
+              )}
             </div>
-            {qr && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={qr} alt="Report QR" className="size-[88px] shrink-0" />
-            )}
-          </div>
+          )}
 
           </div>
         </div>
