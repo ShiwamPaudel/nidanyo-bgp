@@ -40,10 +40,12 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
   const statusLine = bill.dueAmount > 0 ? "Payment pending — report available after full payment & approval." : "Paid — report will be available after approval.";
 
   return (
-    <div className="min-h-screen bg-[#eef1ee]">
+    <div className="min-h-screen bg-[#eef1ee] print-root">
       <PrintToolbar />
-      <div className="py-6">
-        <div className="a4-sheet shadow-card print-sheet" style={{ padding: 0 }}>
+      <div className="py-6 print-page-wrap">
+        {/* print-fit: height follows the content, so a short bill stays on one
+            page instead of spilling a blank second one. */}
+        <div className="a4-sheet shadow-card print-sheet print-fit" style={{ padding: 0 }}>
           {/* Header image is placed flush to the page edges — the uploaded artwork already carries its own margins. */}
           {headerAsset?.url && <PrintHeader headerUrl={headerAsset.url} lab={labInfo} />}
 

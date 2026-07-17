@@ -140,6 +140,32 @@
     box-shadow: none !important;
     margin: 0 !important;
   }
+
+  /*
+   * Fit-to-content printing (bills).
+   *
+   * @page has no margin, so the printable area is exactly 297mm. Anything that
+   * adds height on top of a 297mm sheet pushes a sliver onto a second, near
+   * empty page — which is what forced "print page 1 only". Three things stacked
+   * up: the screen wrapper's min-h-screen, its py-6 padding, and .a4-sheet's
+   * own min-height:297mm (already a full page on its own).
+   *
+   * In print we drop all three and let the content decide the height: a short
+   * bill ends on page one, a long one still flows onto page two naturally.
+   * Scoped to these classes so the paged report sheet is untouched.
+   */
+  .print-root {
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+  .print-page-wrap {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .print-fit {
+    min-height: 0 !important;
+    height: auto !important;
+  }
 }
 
 /* ───────────────────────────────────────────────────────────

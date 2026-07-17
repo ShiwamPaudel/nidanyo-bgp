@@ -26,7 +26,26 @@ export async function listSamples(labId: string, opts: { q?: string; status?: st
       patientCode: patients.code,
       patientPhone: patients.phone,
       createdAt: samples.createdAt,
-      testCount: sql<number>`(select count(*) from visit_tests where visit_tests.visit_id = ${samples.visitId} and visit_tests.sample_type_id = ${samples.sampleTypeId})`,
+      // Tests riding on THIS specimen (a visit can have one sample per type),
+      // so the collector sees exactly what this tube is for. Cancelled tests are
+      // excluded — nobody should be drawing for them.
+      testCount: sql<number>`(
+        select count(*) from visit_tests
+        where visit_tests.visit_id = ${samples.visitId}
+          and visit_tests.sample_type_id = ${samples.sampleTypeId}
+          and visit_tests.status <> 'cancelled'
+      )`,
+      // Ordered inside a subquery: SQLite's group_concat has no guaranteed
+      // ordering of its own, and an unstable test list would be jarring.
+      testNames: sql<string | null>`(
+        select group_concat(test_name, ', ') from (
+          select visit_tests.test_name from visit_tests
+          where visit_tests.visit_id = ${samples.visitId}
+            and visit_tests.sample_type_id = ${samples.sampleTypeId}
+            and visit_tests.status <> 'cancelled'
+          order by visit_tests.test_name
+        )
+      )`,
     })
     .from(samples)
     .innerJoin(visits, eq(samples.visitId, visits.id))

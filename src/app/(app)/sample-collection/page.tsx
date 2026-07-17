@@ -68,7 +68,26 @@ export default async function SampleCollectionPage({ searchParams }: { searchPar
                     <span className="block text-xs text-muted-foreground">{s.patientCode} · {s.patientPhone ?? "—"}</span>
                   </TD>
                   <TD>{s.sampleTypeName}</TD>
-                  <TD className="tabular">{s.testCount}</TD>
+                  <TD>
+                    {/* The collector needs to know what this tube is being drawn
+                        for, not just how many tests there are. */}
+                    <div className="max-w-[340px]">
+                      {s.testNames ? (
+                        <div className="flex flex-wrap gap-1">
+                          {s.testNames.split(", ").map((name, i) => (
+                            <span key={`${s.id}-${i}`} className="rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-700">
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {s.testCount} test{s.testCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  </TD>
                   <TD>
                     <StatusChip status={s.status} />
                     {s.rejectionReason && <span className="block text-xs text-destructive">{s.rejectionReason}</span>}
