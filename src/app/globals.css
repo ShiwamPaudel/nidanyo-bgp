@@ -166,6 +166,32 @@
     min-height: 0 !important;
     height: auto !important;
   }
+
+  /*
+   * Mono-safe text.
+   *
+   * Bills and reports are printed on black-and-white lasers as often as colour
+   * ones. The muted greys (#647067 / #475467) and brand green render as pale,
+   * washed-out text on a mono printer — legible on screen, barely there on
+   * paper. Force real black for everything inside a printed sheet.
+   *
+   * Abnormal/critical values stay legible without colour: they are bold and
+   * carry their L / H / LL / HH flag, which is the convention on lab reports
+   * and does not depend on ink.
+   */
+  .print-sheet,
+  .print-sheet *,
+  .pagedjs_page,
+  .pagedjs_page * {
+    color: #000 !important;
+  }
+  /* Hairline rules also fade on mono output — give them real contrast. */
+  .print-sheet table th,
+  .print-sheet table td,
+  .pagedjs_page table th,
+  .pagedjs_page table td {
+    border-color: #9a9a9a;
+  }
 }
 
 /* ───────────────────────────────────────────────────────────

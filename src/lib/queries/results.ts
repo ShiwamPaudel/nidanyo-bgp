@@ -152,19 +152,19 @@ export interface AddableTest {
   id: string;
   name: string;
   departmentName: string | null;
-  /** Set when this test belongs to a group the visit already ordered. */
+  /** The ordered group this test belongs to but which the visit never received. */
   missingFromGroup: string | null;
 }
 
 /**
- * Active tests that could be added to a visit (i.e. not already ordered on it).
+ * Tests that a visit's ordered groups have gained since the visit was created.
  *
- * `missingFromGroup` marks tests that belong to a group this visit DID order but
- * which the visit never got — the usual cause being that the group gained
- * members after the visit was created. Those are the ones staff are normally
- * hunting for, so the UI can surface them first.
+ * A visit records what was ordered at the time, so editing a group later never
+ * reaches back into it. This finds that drift: tests belonging to a group this
+ * visit DID order, which the visit never got. Syncing pulls exactly these in —
+ * nothing else is ever added.
  */
-export async function getAddableTests(labId: string, visitId: string): Promise<AddableTest[]> {
+export async function getGroupDrift(labId: string, visitId: string): Promise<AddableTest[]> {
   const rows = await db.all<{
     id: string;
     name: string;
@@ -186,6 +186,12 @@ export async function getAddableTests(labId: string, visitId: string): Promise<A
     where t.lab_id = ${labId}
       and t.is_active = 1
       and t.id not in (select test_id from visit_tests where visit_id = ${visitId})
+      -- only drift from groups this visit actually ordered
+      and exists (
+        select 1 from visit_tests vt
+        join test_group_items tgi on tgi.group_id = vt.group_id and tgi.test_id = t.id
+        where vt.visit_id = ${visitId}
+      )
     order by t.name
   `);
   return rows.map((r) => ({

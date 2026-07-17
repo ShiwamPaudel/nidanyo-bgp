@@ -39,7 +39,10 @@ export interface ReportSheetProps {
   lab: LabInfo;
   headerUrl: string | null;
   footerUrl: string | null;
+  /** Blank band reserved at the top of EVERY page when the header is hidden — set it to the height of your pre-printed letterhead. */
   marginTopMm?: number;
+  /** Blank band reserved at the bottom of EVERY page when the footer is hidden. */
+  marginBottomMm?: number;
   marginXMm?: number;
   /** When false, the digital header band is hidden but its blank space is still reserved on every page (for printing on pre-printed letterpads). */
   showHeader?: boolean;
@@ -54,6 +57,7 @@ export interface ReportSheetProps {
     ageValue: number | null;
     ageUnit: string | null;
     phone: string | null;
+    address?: string | null;
     referredBy?: string | null;
   };
   visit: { code: string; referredBy: string | null; visitDate: Date | number };
@@ -71,6 +75,7 @@ export function ReportSheet({
   headerUrl,
   footerUrl,
   marginTopMm = 14,
+  marginBottomMm = 14,
   marginXMm = 12,
   showHeader = true,
   showFooter = true,
@@ -108,7 +113,9 @@ export function ReportSheet({
         <tfoot className="table-footer-group">
           <tr>
             <td style={{ padding: 0 }}>
-              {showFooter ? <PrintFooter footerUrl={footerUrl} lab={lab} /> : <div style={{ height: `${marginTopMm}mm` }} />}
+              {/* Reserve the BOTTOM margin here — this used to reuse marginTopMm,
+                  so the configured bottom margin never had any effect. */}
+              {showFooter ? <PrintFooter footerUrl={footerUrl} lab={lab} /> : <div style={{ height: `${marginBottomMm}mm` }} />}
             </td>
           </tr>
         </tfoot>
@@ -160,6 +167,7 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
           <Line label="Patient" value={patient.fullName} bold />
           <Line label="Patient ID" value={patient.code} />
           <Line label="Age / Sex" value={`${ageLabel(patient.ageValue, patient.ageUnit)} / ${patient.gender}`} />
+          <Line label="Address" value={patient.address ?? "—"} />
         </div>
         <div className="space-y-0.5 text-right">
           <Line label="Visit No" value={visit.code} align="right" bold />

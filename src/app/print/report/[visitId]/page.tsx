@@ -25,8 +25,9 @@ export default async function ReportPrintPage({ params }: { params: Promise<{ vi
       headerUrl={data.headerUrl}
       footerUrl={data.footerUrl}
       marginTopMm={data.settings?.reportMarginTopMm ?? 14}
+      marginBottomMm={data.settings?.reportMarginBottomMm ?? 14}
       marginXMm={data.settings?.reportMarginXMm ?? 12}
-      patient={{ fullName: data.patient!.fullName, code: data.patient!.code, gender: data.patient!.gender, ageValue: data.patient!.ageValue, ageUnit: data.patient!.ageUnit, phone: data.patient!.phone, referredBy: data.patient!.referredBy }}
+      patient={{ fullName: data.patient!.fullName, code: data.patient!.code, gender: data.patient!.gender, ageValue: data.patient!.ageValue, ageUnit: data.patient!.ageUnit, phone: data.patient!.phone, address: data.patient!.address, referredBy: data.patient!.referredBy }}
       visit={{ code: data.visit.code, referredBy: data.visit.referredBy, visitDate: data.visit.visitDate }}
       entries={data.entries as unknown as ReportEntry[]}
       signatories={data.signatories}

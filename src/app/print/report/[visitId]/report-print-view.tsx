@@ -28,7 +28,11 @@ export function ReportPrintView(props: ReportSheetProps) {
   const targetRef = useRef<HTMLDivElement>(null);
 
   const marginX = props.marginXMm ?? 12;
-  const fallbackBandMm = props.marginTopMm ?? 14;
+  // When a band is switched off we reserve the configured margin instead, so a
+  // pre-printed letterpad is never overprinted. Top and bottom are configured
+  // separately — the bottom used to reuse the top value.
+  const fallbackTopMm = props.marginTopMm ?? 14;
+  const fallbackBottomMm = props.marginBottomMm ?? 14;
   const contentWidthMm = PAGE_WIDTH_MM - 2 * marginX;
 
   useEffect(() => {
@@ -58,11 +62,12 @@ export function ReportPrintView(props: ReportSheetProps) {
 
         const headerEl = source!.querySelector(".rpt-header") as HTMLElement | null;
         const footerEl = source!.querySelector(".rpt-footer") as HTMLElement | null;
-        const headerMm = showHeader && headerEl?.offsetHeight ? headerEl.offsetHeight / PX_PER_MM : fallbackBandMm;
-        const footerMm = showFooter && footerEl?.offsetHeight ? footerEl.offsetHeight / PX_PER_MM : fallbackBandMm;
-        const gapMm = 3;
-        const topMm = headerMm + gapMm;
-        const bottomMm = footerMm + gapMm;
+        const headerMm = showHeader && headerEl?.offsetHeight ? headerEl.offsetHeight / PX_PER_MM : fallbackTopMm;
+        const footerMm = showFooter && footerEl?.offsetHeight ? footerEl.offsetHeight / PX_PER_MM : fallbackBottomMm;
+        // The gap is breathing room under a *digital* band. With the band off the
+        // configured margin IS the letterpad reserve, so don't pad it further.
+        const topMm = showHeader ? headerMm + 3 : headerMm;
+        const bottomMm = showFooter ? footerMm + 3 : footerMm;
 
         const css = `
           @page {
@@ -102,7 +107,7 @@ export function ReportPrintView(props: ReportSheetProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeader, showFooter]);
+  }, [showHeader, showFooter, fallbackTopMm, fallbackBottomMm, marginX]);
 
   return (
     <div className="min-h-screen bg-[#eef1ee]">

@@ -63,6 +63,7 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
               <Line label="Patient ID" value={patient?.code} />
               <Line label="Age / Sex" value={`${ageLabel(patient?.ageValue, patient?.ageUnit)} / ${patient?.gender}`} />
               <Line label="Phone" value={patient?.phone ?? "—"} />
+              <Line label="Address" value={patient?.address ?? "—"} />
             </div>
             <div className="space-y-0.5 text-right">
               <Line label="Bill No" value={bill.code} align="right" bold />
@@ -115,7 +116,7 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
               <table className="w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="border-b border-[#DFE2E2] text-left text-[#647067]">
-                    <th className="py-1">Receipt</th><th>Date</th><th>Mode</th><th className="text-right">Amount</th>
+                    <th className="py-1">Receipt</th><th>Date</th><th className="text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -123,7 +124,6 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
                     <tr key={p.id} className="border-b border-[#F0F2F0]">
                       <td className="py-1">{p.code}</td>
                       <td>{fmtDate(p.paidAt)}</td>
-                      <td>{p.mode}</td>
                       <td className="text-right tabular">{money(p.amount)}</td>
                     </tr>
                   ))}
