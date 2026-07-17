@@ -20,6 +20,7 @@ import {
   paymentModes,
   labSettings,
   departments,
+  reportLinks,
 } from "@/db/schema";
 import { authorize } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
@@ -406,3 +407,149 @@ export async function cancelVisit(input: { visitId: string; reason: string }): P
 }
 
 export { activateReportLinkIfReady };
+
+/**
+ * Add tests to an existing visit ("add-on" tests).
+ *
+ * Exists because a visit is a snapshot of what was ordered: editing a test
+ * group later deliberately does NOT rewrite past visits, so a visit created
+ * before a group gained members has no way to pick them up. This is that way.
+ *
+ * Rules (agreed with the lab):
+ *  - The bill is NEVER touched. Added tests carry price 0 so the "Tests
+ *    Performed" revenue report keeps matching what was actually billed.
+ *  - The visit reopens: new tests come in as `pending`, so the report is only
+ *    released again once they are entered and approved. Already-approved
+ *    results are left completely alone.
+ */
+export async function addTestsToVisit(input: { visitId: string; testIds: string[] }): Promise<ActionResult<{ added: number; reopened: boolean }>> {
+  return run(async () => {
+    const user = await authorize(PERMISSIONS.VISIT_CREATE);
+    const visit = (await db.select().from(visits).where(and(eq(visits.id, input.visitId), eq(visits.labId, user.labId)))).at(0);
+    if (!visit) return fail("Visit not found.");
+    if (visit.status === "cancelled") return fail("This visit is cancelled — tests cannot be added to it.");
+
+    const wanted = [...new Set((input.testIds ?? []).filter(Boolean))];
+    if (wanted.length === 0) return fail("Select at least one test to add.");
+
+    // Never double-add something already ordered here.
+    const existing = await db.select().from(visitTests).where(eq(visitTests.visitId, visit.id));
+    const alreadyHave = new Set(existing.map((e) => e.testId));
+    const toAddIds = wanted.filter((id) => !alreadyHave.has(id));
+    if (toAddIds.length === 0) return fail("Those tests are already on this visit.");
+
+    const testRows = await db
+      .select()
+      .from(tests)
+      .where(and(inArray(tests.id, toAddIds), eq(tests.labId, user.labId), eq(tests.isActive, true)));
+    if (testRows.length === 0) return fail("No matching active tests found.");
+
+    const allDepartments = await db.select().from(departments).where(eq(departments.labId, user.labId));
+    const billingOnlyDeptIds = new Set(allDepartments.filter((dep) => dep.billingOnly).map((dep) => dep.id));
+    const isReportable = (t: { departmentId: string | null }) => !t.departmentId || !billingOnlyDeptIds.has(t.departmentId);
+
+    // If the test belongs to a group this visit already ordered, inherit that
+    // group's tag so it prints under the same heading as its siblings.
+    const orderedGroups = new Map<string, string>();
+    for (const e of existing) if (e.groupId && e.groupName) orderedGroups.set(e.groupId, e.groupName);
+    const groupOfTest = new Map<string, { groupId: string; groupName: string }>();
+    if (orderedGroups.size > 0) {
+      const items = await db.select().from(testGroupItems).where(inArray(testGroupItems.groupId, [...orderedGroups.keys()]));
+      for (const it of items) {
+        const name = orderedGroups.get(it.groupId);
+        if (name) groupOfTest.set(it.testId, { groupId: it.groupId, groupName: name });
+      }
+    }
+
+    // Reuse the specimen already drawn for this visit where the type matches;
+    // only open a new sample when the test needs a type nobody collected yet.
+    const existingSamples = await db.select().from(samples).where(eq(samples.visitId, visit.id));
+    const sampleByType = new Map<string, string>();
+    for (const s of existingSamples) if (s.sampleTypeId) sampleByType.set(s.sampleTypeId, s.id);
+    const allSampleTypes = await db.select().from(sampleTypes).where(eq(sampleTypes.labId, user.labId));
+    const sampleTypeById = new Map(allSampleTypes.map((s) => [s.id, s]));
+
+    let newSampleNeeded = false;
+    let added = 0;
+
+    for (const t of testRows) {
+      const reportable = isReportable(t);
+      let sampleId: string | null = null;
+
+      if (reportable && t.sampleTypeId) {
+        if (!sampleByType.has(t.sampleTypeId)) {
+          const code = await nextCode(user.labId, "sample");
+          const [s] = await db
+            .insert(samples)
+            .values({
+              labId: user.labId,
+              code,
+              visitId: visit.id,
+              sampleTypeId: t.sampleTypeId,
+              sampleTypeName: sampleTypeById.get(t.sampleTypeId)?.name ?? "Sample",
+              status: "waiting",
+              createdBy: user.id,
+            })
+            .returning({ id: samples.id });
+          sampleByType.set(t.sampleTypeId, s.id);
+          newSampleNeeded = true;
+        }
+        sampleId = sampleByType.get(t.sampleTypeId) ?? null;
+      }
+
+      const grp = groupOfTest.get(t.id);
+      const vtId = newId();
+      await db.insert(visitTests).values({
+        id: vtId,
+        visitId: visit.id,
+        testId: t.id,
+        testName: t.name,
+        departmentId: t.departmentId,
+        sampleTypeId: t.sampleTypeId,
+        groupId: grp?.groupId ?? null,
+        groupName: grp?.groupName ?? null,
+        price: 0, // bill is never changed — keep revenue reports honest
+        status: "ordered",
+      });
+
+      if (reportable) {
+        await db.insert(resultEntries).values({
+          labId: user.labId,
+          visitId: visit.id,
+          visitTestId: vtId,
+          testId: t.id,
+          testName: t.name,
+          sampleId,
+          status: "pending",
+        });
+      }
+      added++;
+    }
+
+    // Reopen the visit: there is unfinished work on it again.
+    const newStatus = newSampleNeeded ? "sample_pending" : "result_pending";
+    await db.update(visits).set({ status: newStatus, updatedBy: user.id }).where(eq(visits.id, visit.id));
+
+    // The issued report is no longer complete — pull the public link until the
+    // new results are approved, at which point the normal flow re-activates it.
+    await db.update(reportLinks).set({ isActive: false }).where(eq(reportLinks.visitId, visit.id));
+
+    await audit(user, "visit.add_tests", {
+      entity: "visit",
+      entityId: visit.id,
+      summary: `Added ${added} test${added === 1 ? "" : "s"} to ${visit.code} (bill unchanged)`,
+      meta: { tests: testRows.map((t) => t.name), newStatus },
+    });
+    await activity(user, "visit_tests_added", `Added ${added} test${added === 1 ? "" : "s"} to ${visit.code}`, { entity: "visit", entityId: visit.id });
+
+    revalidatePath(`/visits/${visit.id}`);
+    revalidatePath("/results");
+    revalidatePath("/approval");
+    revalidatePath("/sample-collection");
+    revalidatePath("/dispatch");
+    return ok(
+      { added, reopened: true },
+      `${added} test${added === 1 ? "" : "s"} added. The bill is unchanged and the visit is back to ${newSampleNeeded ? "sample collection" : "result entry"}.`,
+    );
+  });
+}

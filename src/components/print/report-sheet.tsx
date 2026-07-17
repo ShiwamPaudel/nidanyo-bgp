@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { PrintHeader, PrintFooter, type LabInfo } from "./letterhead";
 import { flagSymbol, type ResultFlag } from "@/lib/result-flags";
 import { ageLabel } from "@/lib/utils";
@@ -167,50 +168,68 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
         </div>
       </div>
 
-      {/* Results by department */}
+      {/*
+        Results by department — ONE table per department, so the column header is
+        printed once instead of once per test. A single-value test (Dengue IgG →
+        "Negative") is then just one row: repeating its name as both a heading and
+        the row label wasted three lines each. Multi-parameter tests (Stool R/E)
+        still get a name row above their parameters.
+      */}
       {[...byDept.entries()].map(([dept, list]) => (
+        // break-inside-avoid keeps a department whole: it stays on this page if
+        // it fits in the space left, otherwise the entire section moves to the
+        // next page rather than splitting its heading from its tests. (A
+        // department taller than a full page still has to break — nothing can
+        // fit it otherwise.)
         <div key={dept} className="mt-4 break-inside-avoid">
           <p className="mb-1 bg-[#F1F5F2] px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-700">{dept}</p>
-          {list.map((e) => (
-            <div key={e.entry.id} className="mb-2 break-inside-avoid">
-              {list.length > 1 || e.values.length > 1 ? (
-                <p className="mt-1 text-[11px] font-semibold underline">{e.entry.testName}</p>
-              ) : null}
-              <table className="w-full border-collapse text-[11px]">
-                <thead>
-                  <tr className="border-b border-[#0E1B14]/15 text-left text-[#647067]">
-                    <th className="w-[38%] py-1">Investigation</th>
-                    <th className="w-[20%] py-1">Result</th>
-                    <th className="w-[14%] py-1">Unit</th>
-                    <th className="w-[28%] py-1">Reference Range</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {e.values.map((v) => {
-                    const flag = v.flag as ResultFlag;
-                    const critical = flag === "critical_low" || flag === "critical_high";
-                    const abnormal = flag !== "normal";
-                    return (
-                      <tr key={v.id} className="border-b border-[#F0F2F0]">
-                        <td className="py-1 align-top">{v.label}</td>
-                        <td className="py-1 align-top font-semibold tabular" style={{ color: critical ? "#FF3131" : abnormal ? "#B45309" : "#0E1B14" }}>
-                          {v.valueText ?? "—"} {abnormal && <span className="text-[9px]">{flagSymbol(flag)}</span>}
-                        </td>
-                        <td className="py-1 align-top text-[#475467]">{v.unit ?? ""}</td>
-                        <td className="whitespace-pre-line py-1 align-top text-[#475467]">{v.refText ?? ""}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {(e.method || e.note) && (
-                <div className="mt-0.5 text-[9.5px] italic text-[#647067]">
-                  {e.method && <span>Method: {e.method}. </span>}
-                  {e.note && <span>{e.note}</span>}
-                </div>
-              )}
-            </div>
-          ))}
+          <table className="w-full border-collapse text-[11px]">
+            <thead>
+              <tr className="border-b border-[#0E1B14]/15 text-left text-[#647067]">
+                <th className="w-[38%] py-1">Investigation</th>
+                <th className="w-[20%] py-1">Result</th>
+                <th className="w-[14%] py-1">Unit</th>
+                <th className="w-[28%] py-1">Reference Range</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((e) => {
+                const only = e.values.length === 1 ? e.values[0] : null;
+                // Collapse to one line only when the single value is the test
+                // itself — a lone parameter under a different name still needs
+                // both names shown, so it keeps the grouped form.
+                const oneLiner =
+                  only != null && only.label.trim().toLowerCase() === e.entry.testName.trim().toLowerCase();
+
+                return (
+                  <Fragment key={e.entry.id}>
+                    {oneLiner ? (
+                      <ValueRow value={only!} label={e.entry.testName} method={e.method} note={e.note} />
+                    ) : (
+                      <>
+                        <tr className="break-inside-avoid">
+                          <td colSpan={4} className="pt-1.5 text-[11px] font-semibold underline">
+                            {e.entry.testName}
+                          </td>
+                        </tr>
+                        {e.values.map((v) => (
+                          <ValueRow key={v.id} value={v} label={v.label} indent />
+                        ))}
+                        {(e.method || e.note) && (
+                          <tr>
+                            <td colSpan={4} className="pb-1 text-[9.5px] italic text-[#647067]">
+                              {e.method && <span>Method: {e.method}. </span>}
+                              {e.note && <span>{e.note}</span>}
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ))}
 
@@ -258,6 +277,50 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * One result line: Investigation | Result | Unit | Reference Range.
+ * Shared by the collapsed single-value form and the parameter rows of a
+ * multi-parameter test, so both stay visually identical.
+ */
+function ValueRow({
+  value: v,
+  label,
+  indent,
+  method,
+  note,
+}: {
+  value: ReportValue;
+  label: string;
+  indent?: boolean;
+  method?: string | null;
+  note?: string | null;
+}) {
+  const flag = v.flag as ResultFlag;
+  const critical = flag === "critical_low" || flag === "critical_high";
+  const abnormal = flag !== "normal";
+  return (
+    <tr className="break-inside-avoid border-b border-[#F0F2F0]">
+      <td className={`py-1 align-top${indent ? " pl-3" : ""}`}>
+        {label}
+        {(method || note) && (
+          <span className="block text-[9.5px] italic text-[#647067]">
+            {method && <span>Method: {method}. </span>}
+            {note}
+          </span>
+        )}
+      </td>
+      <td
+        className="py-1 align-top font-semibold tabular"
+        style={{ color: critical ? "#FF3131" : abnormal ? "#B45309" : "#0E1B14" }}
+      >
+        {v.valueText ?? "—"} {abnormal && <span className="text-[9px]">{flagSymbol(flag)}</span>}
+      </td>
+      <td className="py-1 align-top text-[#475467]">{v.unit ?? ""}</td>
+      <td className="whitespace-pre-line py-1 align-top text-[#475467]">{v.refText ?? ""}</td>
+    </tr>
   );
 }
 

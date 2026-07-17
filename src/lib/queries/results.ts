@@ -122,3 +122,51 @@ export async function countSyncableRanges(labId: string, visitId: string): Promi
   `);
   return Number(rows[0]?.n ?? 0);
 }
+
+export interface AddableTest {
+  id: string;
+  name: string;
+  departmentName: string | null;
+  /** Set when this test belongs to a group the visit already ordered. */
+  missingFromGroup: string | null;
+}
+
+/**
+ * Active tests that could be added to a visit (i.e. not already ordered on it).
+ *
+ * `missingFromGroup` marks tests that belong to a group this visit DID order but
+ * which the visit never got — the usual cause being that the group gained
+ * members after the visit was created. Those are the ones staff are normally
+ * hunting for, so the UI can surface them first.
+ */
+export async function getAddableTests(labId: string, visitId: string): Promise<AddableTest[]> {
+  const rows = await db.all<{
+    id: string;
+    name: string;
+    departmentName: string | null;
+    missingFromGroup: string | null;
+  }>(sql`
+    select
+      t.id   as id,
+      t.name as name,
+      d.name as departmentName,
+      (
+        select vt2.group_name from visit_tests vt2
+        join test_group_items tgi on tgi.group_id = vt2.group_id and tgi.test_id = t.id
+        where vt2.visit_id = ${visitId}
+        limit 1
+      ) as missingFromGroup
+    from tests t
+    left join departments d on t.department_id = d.id
+    where t.lab_id = ${labId}
+      and t.is_active = 1
+      and t.id not in (select test_id from visit_tests where visit_id = ${visitId})
+    order by t.name
+  `);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    departmentName: r.departmentName ?? null,
+    missingFromGroup: r.missingFromGroup ?? null,
+  }));
+}

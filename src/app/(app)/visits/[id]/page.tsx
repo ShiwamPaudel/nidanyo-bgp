@@ -4,7 +4,7 @@ import { Printer, UserRound, Link2, CheckCircle2, Clock } from "lucide-react";
 import { requirePermission, hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { getVisitDetail } from "@/lib/queries/billing";
-import { countSyncableRanges } from "@/lib/queries/results";
+import { countSyncableRanges, getAddableTests } from "@/lib/queries/results";
 import { getPaymentModes } from "@/lib/queries/catalog";
 import { getLab } from "@/lib/queries/lab";
 import { reportUrl } from "@/lib/report-engine";
@@ -16,7 +16,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { money, ageLabel } from "@/lib/utils";
 import { fmtDate, fmtDateTime } from "@/lib/datetime";
-import { ReceivePaymentButton, CancelVisitButton, SyncRangesButton } from "./visit-actions";
+import { ReceivePaymentButton, CancelVisitButton, SyncRangesButton, AddTestsButton } from "./visit-actions";
 
 export default async function VisitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission(PERMISSIONS.VISIT_VIEW);
@@ -35,6 +35,8 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
   // Only offer the range sync when this visit actually has values missing a
   // range the catalog can now fill — otherwise the button never appears.
   const syncableRanges = hasPermission(user, PERMISSIONS.APPROVAL_ACT) && !cancelled ? await countSyncableRanges(user.labId, id) : 0;
+  const canAddTests = hasPermission(user, PERMISSIONS.VISIT_CREATE) && !cancelled;
+  const addableTests = canAddTests ? await getAddableTests(user.labId, id) : [];
 
   return (
     <>
@@ -48,6 +50,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
                 <Printer className="size-4" /> Print bill
               </Link>
             )}
+            {canAddTests && addableTests.length > 0 && <AddTestsButton visitId={visit.id} tests={addableTests} />}
             {syncableRanges > 0 && <SyncRangesButton visitId={visit.id} />}
             {canPay && <ReceivePaymentButton billId={bill!.id} due={bill!.dueAmount} modes={modes.map((m) => ({ id: m.id, name: m.name }))} />}
             {canCancel && <CancelVisitButton visitId={visit.id} visitCode={visit.code} />}
