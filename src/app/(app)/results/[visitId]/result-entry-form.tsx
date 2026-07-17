@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Save, Send, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { StatusChip } from "@/components/ui/status-chip";
 import { cn } from "@/lib/utils";
 import { computeFlag, flagSymbol, type ResultFlag } from "@/lib/result-flags";
 import { saveResults, type ResultEntryInput } from "@/lib/actions/result-actions";
@@ -36,6 +35,23 @@ export interface EntryDef {
   correctionNote: string | null;
   technicianRemarks: string;
   rows: RowDef[];
+}
+
+// Result-entry status → dot colour + hover label. Replaces the old text chip:
+// the workflow state is now a small coloured dot beside the test name (grey =
+// draft, amber = pending/awaiting approval, red = correction, green = approved).
+const STATUS_DOT: Record<string, { color: string; label: string }> = {
+  pending: { color: "bg-amber-500", label: "Pending result" },
+  draft: { color: "bg-gray-400", label: "Draft" },
+  submitted: { color: "bg-amber-500", label: "Awaiting approval" },
+  correction_required: { color: "bg-red-500", label: "Correction required" },
+  approved: { color: "bg-green-500", label: "Approved" },
+  dispatched: { color: "bg-brand-600", label: "Dispatched" },
+};
+
+function StatusDot({ status }: { status: string }) {
+  const s = STATUS_DOT[status] ?? { color: "bg-gray-400", label: status.replace(/_/g, " ") };
+  return <span title={s.label} aria-label={s.label} className={cn("inline-block size-2 shrink-0 rounded-full", s.color)} />;
 }
 
 export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; initialEntries: EntryDef[] }) {
@@ -84,8 +100,8 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
   }
 
   // Group for display only — each entry keeps its index into `entries`, because
-  // setValue/setRemarks address rows by position. Reordering the state array
-  // here would write values into the wrong test.
+  // setValue addresses rows by position. Reordering the state array here would
+  // write values into the wrong test.
   const byDept: { dept: string; items: { entry: EntryDef; ei: number }[] }[] = [];
   entries.forEach((entry, ei) => {
     const dept = entry.department ?? "Other";
@@ -98,32 +114,12 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
   return (
     <div className="space-y-4">
       {byDept.map(({ dept, items }) => (
-        <div key={dept} className="space-y-3">
+        <div key={dept} className="space-y-2">
           <p className="rounded bg-[#F1F5F2] px-2 py-1 text-[13px] font-extrabold uppercase tracking-wide text-brand-700">{dept}</p>
-          {items.map(({ entry, ei }) => {
-            // A "one-liner" test (single value whose only row is named after the
-            // test itself) already shows its name beside the result box as the
-            // row label — so we don't repeat it in the card header. Multi-parameter
-            // tests keep the header, since that's the only place their name appears.
-            const oneLiner =
-              entry.rows.length === 1 &&
-              entry.rows[0].label.trim().toLowerCase() === entry.testName.trim().toLowerCase();
-            return (
-        <Card key={entry.entryId}>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              {!oneLiner && entry.testName}
-              <StatusChip status={entry.status} />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {entry.correctionNote && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                <span><span className="font-medium">Correction requested:</span> {entry.correctionNote}</span>
-              </div>
-            )}
-            <div className="overflow-x-auto">
+          {/* One table per department — the column headings are printed once at
+              the top of the department, not repeated for every test. */}
+          <Card>
+            <CardContent className="overflow-x-auto p-5">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
@@ -135,58 +131,62 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
                   </tr>
                 </thead>
                 <tbody>
-                  {entry.rows.map((row, ri) => {
-                    const num = row.value.trim() === "" ? null : Number(row.value);
-                    const flag: ResultFlag =
-                      num != null && !Number.isNaN(num)
-                        ? computeFlag(num, { refLow: row.refLow, refHigh: row.refHigh, criticalLow: row.criticalLow, criticalHigh: row.criticalHigh })
-                        : "normal";
-                    const critical = flag === "critical_low" || flag === "critical_high";
+                  {items.map(({ entry, ei }) => {
+                    // A "one-liner" test (single value named after the test itself)
+                    // is one row: the status dot + name sit beside its result box.
+                    // A multi-parameter test gets a name row (dot + name) above its
+                    // indented parameter rows.
+                    const oneLiner =
+                      entry.rows.length === 1 &&
+                      entry.rows[0].label.trim().toLowerCase() === entry.testName.trim().toLowerCase();
                     return (
-                      <tr key={ri} className="border-b border-border/60">
-                        <td className="py-2 pr-3 font-medium">{row.label}</td>
-                        <td className="py-2 pr-3">
-                          {row.resultType === "select" && row.options ? (
-                            <Select value={row.value} onChange={(e) => setValue(ei, ri, e.target.value)} disabled={entry.locked} className="h-9 w-36">
-                              <option value="">—</option>
-                              {row.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                            </Select>
-                          ) : row.resultType === "pos_neg" ? (
-                            <Select value={row.value} onChange={(e) => setValue(ei, ri, e.target.value)} disabled={entry.locked} className="h-9 w-36">
-                              <option value="">—</option>
-                              <option value="Negative">Negative</option>
-                              <option value="Positive">Positive</option>
-                            </Select>
-                          ) : (
-                            <Input
-                              value={row.value}
-                              onChange={(e) => setValue(ei, ri, e.target.value)}
-                              disabled={entry.locked}
-                              inputMode={row.resultType === "numeric" ? "decimal" : "text"}
-                              className={cn("h-9 w-36", critical && "border-destructive text-destructive font-semibold", flag !== "normal" && !critical && "border-amber-400")}
-                              placeholder="Enter"
-                            />
-                          )}
-                        </td>
-                        <td className="py-2 pr-3 text-muted-foreground">{row.unit ?? "—"}</td>
-                        <td className="py-2 pr-3 text-muted-foreground">{row.refText}</td>
-                        <td className="py-2">
-                          {flag !== "normal" && (
-                            <Badge tone={critical ? "danger" : "warning"}>
-                              {critical && <AlertTriangle className="size-3" />} {flagSymbol(flag)}
-                            </Badge>
-                          )}
-                        </td>
-                      </tr>
+                      <Fragment key={entry.entryId}>
+                        {!oneLiner && (
+                          <tr className="border-b border-border/60">
+                            <td colSpan={5} className="pt-3 pb-1">
+                              <span className="inline-flex items-center gap-2 font-semibold">
+                                <StatusDot status={entry.status} />
+                                {entry.testName}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                        {entry.correctionNote && (
+                          <tr>
+                            <td colSpan={5} className="pb-2 pt-1">
+                              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                                <span><span className="font-medium">Correction requested:</span> {entry.correctionNote}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {entry.rows.map((row, ri) => (
+                          <ParamRow
+                            key={ri}
+                            row={row}
+                            disabled={entry.locked}
+                            onChange={(v) => setValue(ei, ri, v)}
+                            indent={!oneLiner}
+                            label={
+                              oneLiner ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <StatusDot status={entry.status} />
+                                  {row.label}
+                                </span>
+                              ) : (
+                                row.label
+                              )
+                            }
+                          />
+                        ))}
+                      </Fragment>
                     );
                   })}
                 </tbody>
               </table>
-            </div>
-          </CardContent>
-        </Card>
-            );
-          })}
+            </CardContent>
+          </Card>
         </div>
       ))}
 
@@ -199,5 +199,64 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
         </Button>
       </div>
     </div>
+  );
+}
+
+/** One editable result row: Parameter | Result input | Unit | Reference | Flag. */
+function ParamRow({
+  row,
+  disabled,
+  onChange,
+  label,
+  indent,
+}: {
+  row: RowDef;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  label: React.ReactNode;
+  indent?: boolean;
+}) {
+  const num = row.value.trim() === "" ? null : Number(row.value);
+  const flag: ResultFlag =
+    num != null && !Number.isNaN(num)
+      ? computeFlag(num, { refLow: row.refLow, refHigh: row.refHigh, criticalLow: row.criticalLow, criticalHigh: row.criticalHigh })
+      : "normal";
+  const critical = flag === "critical_low" || flag === "critical_high";
+  return (
+    <tr className="border-b border-border/60">
+      <td className={cn("py-2 pr-3", indent ? "pl-6 text-muted-foreground" : "font-medium")}>{label}</td>
+      <td className="py-2 pr-3">
+        {row.resultType === "select" && row.options ? (
+          <Select value={row.value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className="h-9 w-36">
+            <option value="">—</option>
+            {row.options.map((o) => <option key={o} value={o}>{o}</option>)}
+          </Select>
+        ) : row.resultType === "pos_neg" ? (
+          <Select value={row.value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className="h-9 w-36">
+            <option value="">—</option>
+            <option value="Negative">Negative</option>
+            <option value="Positive">Positive</option>
+          </Select>
+        ) : (
+          <Input
+            value={row.value}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            inputMode={row.resultType === "numeric" ? "decimal" : "text"}
+            className={cn("h-9 w-36", critical && "border-destructive text-destructive font-semibold", flag !== "normal" && !critical && "border-amber-400")}
+            placeholder="Enter"
+          />
+        )}
+      </td>
+      <td className="py-2 pr-3 text-muted-foreground">{row.unit ?? "—"}</td>
+      <td className="py-2 pr-3 text-muted-foreground">{row.refText}</td>
+      <td className="py-2">
+        {flag !== "normal" && (
+          <Badge tone={critical ? "danger" : "warning"}>
+            {critical && <AlertTriangle className="size-3" />} {flagSymbol(flag)}
+          </Badge>
+        )}
+      </td>
+    </tr>
   );
 }
