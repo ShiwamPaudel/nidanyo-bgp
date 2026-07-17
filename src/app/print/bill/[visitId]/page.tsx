@@ -9,7 +9,7 @@ import { qrDataUrl } from "@/lib/qr";
 import { PrintToolbar } from "@/components/print/print-sheet";
 import { PrintHeader } from "@/components/print/letterhead";
 import { money, ageLabel } from "@/lib/utils";
-import { fmtDateTime, fmtDate } from "@/lib/datetime";
+import { fmtDateTime } from "@/lib/datetime";
 
 export const metadata = { title: "Bill" };
 
@@ -19,7 +19,7 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
   const { visitId } = await params;
   const detail = await getVisitDetail(user.labId, visitId);
   if (!detail || !detail.bill) notFound();
-  const { visit, patient, bill, items, payments, reportLink } = detail;
+  const { visit, patient, bill, items, reportLink } = detail;
 
   const { lab, settings } = await getLab(user.labId);
   const headerAsset = await getLabAsset(user.labId, "bill_header").then((a) => a ?? getLabAsset(user.labId, "report_header"));
@@ -86,7 +86,7 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
               {items.map((it, i) => (
                 <tr key={it.id} className="border-b border-[#DFE2E2]">
                   <td className="py-1.5 pl-1 align-top text-[#647067]">{i + 1}</td>
-                  <td className="py-1.5">{it.label}{it.kind === "group" ? " (Profile)" : ""}</td>
+                  <td className="py-1.5 text-[14px]">{it.label}{it.kind === "group" ? " (Profile)" : ""}</td>
                   <td className="py-1.5 pr-1 text-right tabular">{money(it.lineTotal)}</td>
                 </tr>
               ))}
@@ -108,29 +108,6 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
               </div>
             </div>
           </div>
-
-          {/* Payment history */}
-          {payments.length > 0 && (
-            <div className="mt-4">
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[#647067]">Payment history</p>
-              <table className="w-full border-collapse text-[11px]">
-                <thead>
-                  <tr className="border-b border-[#DFE2E2] text-left text-[#647067]">
-                    <th className="py-1">Receipt</th><th>Date</th><th className="text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payments.map((p) => (
-                    <tr key={p.id} className="border-b border-[#F0F2F0]">
-                      <td className="py-1">{p.code}</td>
-                      <td>{fmtDate(p.paidAt)}</td>
-                      <td className="text-right tabular">{money(p.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
 
           {/* QR + status — omitted entirely for billing-only visits (dental,
               consultation, radiology…), which produce no report to track. */}

@@ -81,6 +81,26 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-07-17 — Results entry: remove technician remarks, dept headers
+- Removed the **"Technician remarks (optional)" textarea** and its `setRemarks` handler
+  from `src/app/(app)/results/[visitId]/result-entry-form.tsx` (technicians don't add
+  remarks). The `technicianRemarks` value is still round-tripped through the save payload
+  unchanged, so `saveResults` never wipes an existing stored remark and none can be added.
+  The DB column and server action were left intact (non-destructive).
+- Results entry was **already grouped by department** (server sorts via
+  `compareEntries`, form renders a per-department header) — bumped the header style to
+  match the report (`text-[13px] font-extrabold`).
+
+### 2026-07-17 — Report notes moved to the bottom
+- A test's **"Report note / description"** (`tests.description` → `note` on `ReportEntry`)
+  no longer prints inline under the test. All such notes are now collected into one block
+  at the very bottom of the report, **just above the "End of report" line**, each prefixed
+  with its test name and separated by a blank-line gap (`mt-3`) when there's more than one.
+  `tests.method` ("Method: …") **stays inline** under the test — only the note moved.
+  Change is entirely in `src/components/print/report-sheet.tsx` (`ReportBody` collects
+  `testNotes`; `ValueRow` lost its `note` prop), so it applies to the print view, the
+  table fallback, and the public `/r/[token]` report (all render `ReportBody`/`ReportSheet`).
+
 ### 2026-07-17 — Four production improvements
 1. **Referral tracking in finance reports.** `listTransactions` now joins `visits` and
    returns `referredBy = visit.referredBy ?? patient.referredBy ?? null`. Added a

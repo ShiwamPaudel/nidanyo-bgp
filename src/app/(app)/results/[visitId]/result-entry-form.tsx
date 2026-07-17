@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Save, Send, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -50,19 +50,14 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
       return next;
     });
   }
-  function setRemarks(ei: number, value: string) {
-    setEntries((prev) => {
-      const next = structuredClone(prev);
-      next[ei].technicianRemarks = value;
-      return next;
-    });
-  }
-
   function payload(): { visitId: string; entries: ResultEntryInput[] } {
     return {
       visitId,
       entries: entries
         .filter((e) => !e.locked)
+        // technicianRemarks is no longer entered by technicians (the input was
+        // removed). Any value already stored is passed straight back through so a
+        // re-save never wipes an existing remark; no new one can be added.
         .map((e) => ({
           entryId: e.entryId,
           technicianRemarks: e.technicianRemarks || null,
@@ -104,7 +99,7 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
     <div className="space-y-4">
       {byDept.map(({ dept, items }) => (
         <div key={dept} className="space-y-3">
-          <p className="rounded bg-[#F1F5F2] px-2 py-1 text-xs font-bold uppercase tracking-wide text-brand-700">{dept}</p>
+          <p className="rounded bg-[#F1F5F2] px-2 py-1 text-[13px] font-extrabold uppercase tracking-wide text-brand-700">{dept}</p>
           {items.map(({ entry, ei }) => (
         <Card key={entry.entryId}>
           <CardHeader className="flex-row items-center justify-between">
@@ -180,13 +175,6 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
                 </tbody>
               </table>
             </div>
-            <Textarea
-              value={entry.technicianRemarks}
-              onChange={(e) => setRemarks(ei, e.target.value)}
-              placeholder="Technician remarks (optional)"
-              disabled={entry.locked}
-              className="min-h-[52px] text-sm"
-            />
           </CardContent>
         </Card>
           ))}
