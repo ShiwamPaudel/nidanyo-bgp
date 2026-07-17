@@ -62,12 +62,16 @@ export function ReportPrintView(props: ReportSheetProps) {
 
         const headerEl = source!.querySelector(".rpt-header") as HTMLElement | null;
         const footerEl = source!.querySelector(".rpt-footer") as HTMLElement | null;
-        const headerMm = showHeader && headerEl?.offsetHeight ? headerEl.offsetHeight / PX_PER_MM : fallbackTopMm;
-        const footerMm = showFooter && footerEl?.offsetHeight ? footerEl.offsetHeight / PX_PER_MM : fallbackBottomMm;
-        // The gap is breathing room under a *digital* band. With the band off the
-        // configured margin IS the letterpad reserve, so don't pad it further.
-        const topMm = showHeader ? headerMm + 3 : headerMm;
-        const bottomMm = showFooter ? footerMm + 3 : footerMm;
+        const headerMm = showHeader && headerEl?.offsetHeight ? headerEl.offsetHeight / PX_PER_MM + 3 : 0;
+        const footerMm = showFooter && footerEl?.offsetHeight ? footerEl.offsetHeight / PX_PER_MM + 3 : 0;
+        // The configured margin is a FLOOR, honoured in both modes:
+        //  - band off  → it is the blank reserve for a pre-printed letterpad.
+        //  - band on   → the band still gets its measured height, but never less
+        //                than the configured margin.
+        // Previously it was consulted only when the band was off, so changing it
+        // with the header on appeared to do nothing at all.
+        const topMm = Math.max(headerMm, fallbackTopMm);
+        const bottomMm = Math.max(footerMm, fallbackBottomMm);
 
         const css = `
           @page {

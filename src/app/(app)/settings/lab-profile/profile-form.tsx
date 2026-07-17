@@ -80,10 +80,15 @@ export function LabProfileForm({ initial }: { initial: LabProfileInput }) {
             <Field label="Public link base URL" hint="Used for QR codes & report links on bills">
               <Input value={form.shortLinkBaseUrl ?? ""} onChange={(e) => set("shortLinkBaseUrl", e.target.value)} placeholder="https://reports.yourlab.com" />
             </Field>
+            <p className="text-xs text-muted-foreground">
+              Minimum blank space kept on <span className="font-medium">every</span> printed page. When you print on a
+              pre-printed letter pad (header/footer turned off at print time), set the top margin to the height of your
+              pad&apos;s printed letterhead so nothing overprints it.
+            </p>
             <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Top margin (mm)"><Input type="number" value={form.reportMarginTopMm} onChange={(e) => set("reportMarginTopMm", Number(e.target.value))} /></Field>
-              <Field label="Bottom (mm)"><Input type="number" value={form.reportMarginBottomMm} onChange={(e) => set("reportMarginBottomMm", Number(e.target.value))} /></Field>
-              <Field label="Side (mm)"><Input type="number" value={form.reportMarginXMm} onChange={(e) => set("reportMarginXMm", Number(e.target.value))} /></Field>
+              <Field label="Top margin (mm)" hint="Height of your letter pad's header"><Input type="number" min={0} max={80} value={form.reportMarginTopMm} onChange={(e) => set("reportMarginTopMm", Number(e.target.value))} /></Field>
+              <Field label="Bottom (mm)" hint="Height of your letter pad's footer"><Input type="number" min={0} max={80} value={form.reportMarginBottomMm} onChange={(e) => set("reportMarginBottomMm", Number(e.target.value))} /></Field>
+              <Field label="Side (mm)"><Input type="number" min={0} max={40} value={form.reportMarginXMm} onChange={(e) => set("reportMarginXMm", Number(e.target.value))} /></Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.requirePhoneVerification} onChange={(e) => set("requirePhoneVerification", e.target.checked)} className="size-4 rounded border-border accent-[#075323]" />

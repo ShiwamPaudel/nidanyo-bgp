@@ -106,7 +106,13 @@ export function ReportSheet({
         <thead className="table-header-group">
           <tr>
             <td style={{ padding: 0 }}>
-              {showHeader ? <PrintHeader headerUrl={headerUrl} lab={lab} /> : <div style={{ height: `${marginTopMm}mm` }} />}
+              {/* minHeight, not height: the configured margin is a floor. With the
+                  header on, a taller letterhead still wins; with it off, this is
+                  the blank reserve for a pre-printed pad. Repeated on every page
+                  because a thead is a table-header-group. */}
+              <div style={{ minHeight: `${marginTopMm}mm` }}>
+                {showHeader ? <PrintHeader headerUrl={headerUrl} lab={lab} /> : null}
+              </div>
             </td>
           </tr>
         </thead>
@@ -115,7 +121,9 @@ export function ReportSheet({
             <td style={{ padding: 0 }}>
               {/* Reserve the BOTTOM margin here — this used to reuse marginTopMm,
                   so the configured bottom margin never had any effect. */}
-              {showFooter ? <PrintFooter footerUrl={footerUrl} lab={lab} /> : <div style={{ height: `${marginBottomMm}mm` }} />}
+              <div style={{ minHeight: `${marginBottomMm}mm` }}>
+                {showFooter ? <PrintFooter footerUrl={footerUrl} lab={lab} /> : null}
+              </div>
             </td>
           </tr>
         </tfoot>
