@@ -29,6 +29,8 @@ export interface RowDef {
 export interface EntryDef {
   entryId: string;
   testName: string;
+  /** Department this test belongs to; entries are shown grouped under it. */
+  department: string | null;
   status: string;
   locked: boolean;
   correctionNote: string | null;
@@ -86,9 +88,24 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
     });
   }
 
+  // Group for display only — each entry keeps its index into `entries`, because
+  // setValue/setRemarks address rows by position. Reordering the state array
+  // here would write values into the wrong test.
+  const byDept: { dept: string; items: { entry: EntryDef; ei: number }[] }[] = [];
+  entries.forEach((entry, ei) => {
+    const dept = entry.department ?? "Other";
+    const last = byDept[byDept.length - 1];
+    // The server already sorts entries by department, so equal neighbours group.
+    if (last && last.dept === dept) last.items.push({ entry, ei });
+    else byDept.push({ dept, items: [{ entry, ei }] });
+  });
+
   return (
     <div className="space-y-4">
-      {entries.map((entry, ei) => (
+      {byDept.map(({ dept, items }) => (
+        <div key={dept} className="space-y-3">
+          <p className="rounded bg-[#F1F5F2] px-2 py-1 text-xs font-bold uppercase tracking-wide text-brand-700">{dept}</p>
+          {items.map(({ entry, ei }) => (
         <Card key={entry.entryId}>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -172,6 +189,8 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
             />
           </CardContent>
         </Card>
+          ))}
+        </div>
       ))}
 
       <div className="sticky bottom-4 flex items-center justify-end gap-2 rounded-xl border border-border bg-card/90 p-3 shadow-lift backdrop-blur">

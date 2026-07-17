@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/db/client";
-import { resultEntries, visits, patients, tests, testParameters, resultValues, samples } from "@/db/schema";
+import { resultEntries, visits, patients, tests, testParameters, resultValues, samples, departments } from "@/db/schema";
 import { and, asc, desc, eq, inArray, like, or, sql, ne } from "drizzle-orm";
 
 /**
@@ -81,12 +81,37 @@ export async function getVisitResults(labId: string, visitId: string) {
   }
   const sampleById = new Map(sampleRows.map((s) => [s.id, s]));
 
+  // Entries are presented department by department (Hematology, then
+  // Biochemistry…) so the bench works through one discipline at a time and the
+  // entry screen mirrors the printed report. Order follows the department's
+  // configured displayOrder rather than the test name.
+  const deptRows = await db.select().from(departments).where(eq(departments.labId, labId));
+  const deptById = new Map(deptRows.map((d) => [d.id, d]));
+  const deptOf = (testId: string) => {
+    const t = testById.get(testId);
+    return t?.departmentId ? deptById.get(t.departmentId) ?? null : null;
+  };
+
+  const ordered = [...entries].sort((a, b) => {
+    const da = deptOf(a.testId);
+    const dbb = deptOf(b.testId);
+    // Tests with no department sink to the bottom.
+    const oa = da?.displayOrder ?? Number.MAX_SAFE_INTEGER;
+    const ob = dbb?.displayOrder ?? Number.MAX_SAFE_INTEGER;
+    if (oa !== ob) return oa - ob;
+    const na = da?.name ?? "￿";
+    const nb = dbb?.name ?? "￿";
+    if (na !== nb) return na.localeCompare(nb);
+    return a.testName.localeCompare(b.testName);
+  });
+
   return {
     visit,
     patient,
-    entries: entries.map((e) => ({
+    entries: ordered.map((e) => ({
       entry: e,
       test: testById.get(e.testId),
+      department: deptOf(e.testId)?.name ?? null,
       params: paramsByTest.get(e.testId) ?? [],
       values: valuesByEntry.get(e.id) ?? [],
       sample: e.sampleId ? sampleById.get(e.sampleId) : undefined,

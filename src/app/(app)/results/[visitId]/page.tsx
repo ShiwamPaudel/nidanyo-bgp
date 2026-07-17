@@ -21,7 +21,7 @@ export default async function ResultEntryPage({ params }: { params: Promise<{ vi
   if (!data) notFound();
   const { visit, patient, entries } = data;
 
-  const formEntries: EntryDef[] = entries.map(({ entry, test, params: paramRows, values, sample }) => {
+  const formEntries: EntryDef[] = entries.map(({ entry, test, department, params: paramRows, values, sample }) => {
     const locked = entry.status === "approved" || entry.status === "dispatched";
     const valueByKey = new Map(values.map((v) => [v.parameterId ?? "single", v.valueText ?? ""]));
 
@@ -61,6 +61,7 @@ export default async function ResultEntryPage({ params }: { params: Promise<{ vi
     return {
       entryId: entry.id,
       testName: entry.testName,
+      department,
       status: entry.status,
       locked,
       correctionNote: entry.correctionNote ?? null,
