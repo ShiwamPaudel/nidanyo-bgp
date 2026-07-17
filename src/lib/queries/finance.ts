@@ -43,16 +43,26 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
       billCode: bills.code,
       visitId: bills.visitId,
       patientName: patients.fullName,
+      // Who referred the patient for this visit — the visit's referral wins,
+      // falling back to the patient's default referrer. Used to track walk-ins
+      // vs. doctor-referred patients on finance reports.
+      visitReferredBy: visits.referredBy,
+      patientReferredBy: patients.referredBy,
     })
     .from(payments)
     .innerJoin(bills, eq(payments.billId, bills.id))
     .innerJoin(patients, eq(payments.patientId, patients.id))
+    .innerJoin(visits, eq(bills.visitId, visits.id))
     .where(and(...conds))
     .orderBy(desc(payments.paidAt))
     .limit(1000);
 
-  const total = rows.reduce((sum, r) => sum + (r.kind === "refund" ? -r.amount : r.amount), 0);
-  return { rows, total };
+  const shaped = rows.map(({ visitReferredBy, patientReferredBy, ...r }) => ({
+    ...r,
+    referredBy: visitReferredBy ?? patientReferredBy ?? null,
+  }));
+  const total = shaped.reduce((sum, r) => sum + (r.kind === "refund" ? -r.amount : r.amount), 0);
+  return { rows: shaped, total };
 }
 
 /** End-of-day / range financial summary. */

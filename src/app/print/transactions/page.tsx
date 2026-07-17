@@ -68,6 +68,7 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                 <th className="py-1.5 pl-1">Receipt</th>
                 <th className="py-1.5">Date</th>
                 <th className="py-1.5">Patient</th>
+                <th className="py-1.5">Referred by</th>
                 <th className="py-1.5">Bill</th>
                 <th className="py-1.5">Mode</th>
                 <th className="py-1.5">Type</th>
@@ -82,6 +83,7 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                   <td className="py-1 pl-1">{r.code}</td>
                   <td className="py-1">{fmtDateTime(r.paidAt)}</td>
                   <td className="py-1">{r.patientName}</td>
+                  <td className="py-1">{r.referredBy ?? "Walk-in"}</td>
                   <td className="py-1">{r.billCode}</td>
                   <td className="py-1">{r.mode}</td>
                   <td className="py-1 capitalize">{r.kind === "due_collection" ? "Due Collection" : r.kind}</td>
@@ -91,12 +93,12 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={9} className="py-3 text-center text-[#647067]">No transactions in this range.</td></tr>
+                <tr><td colSpan={10} className="py-3 text-center text-[#647067]">No transactions in this range.</td></tr>
               )}
             </tbody>
             <tfoot>
               <tr className="border-t border-[#0E1B14]/20 font-bold">
-                <td className="py-1.5 pl-1" colSpan={8}>Net collected ({rows.length} transactions)</td>
+                <td className="py-1.5 pl-1" colSpan={9}>Net collected ({rows.length} transactions)</td>
                 <td className="py-1.5 pr-1 text-right tabular">{money(total)}</td>
               </tr>
             </tfoot>

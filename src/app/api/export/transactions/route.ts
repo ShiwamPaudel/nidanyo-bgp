@@ -43,11 +43,11 @@ export async function GET(req: NextRequest) {
   lines.push("");
 
   // Transactions
-  lines.push(csvRow(["Receipt", "Date", "Patient", "Bill", "Mode", "Type", "Reference", "Received By", "Amount"]));
+  lines.push(csvRow(["Receipt", "Date", "Patient", "Referred By", "Bill", "Mode", "Type", "Reference", "Received By", "Amount"]));
   for (const r of rows) {
-    lines.push(csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.billCode, r.mode, r.kind, r.reference ?? "", r.receivedByName ?? "", r.amount.toFixed(2)]));
+    lines.push(csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.billCode, r.mode, r.kind, r.reference ?? "", r.receivedByName ?? "", r.amount.toFixed(2)]));
   }
-  lines.push(csvRow(["", "", "", "", "", "", "", "Net collected", total.toFixed(2)]));
+  lines.push(csvRow(["", "", "", "", "", "", "", "", "Net collected", total.toFixed(2)]));
   lines.push("");
 
   // Range summary

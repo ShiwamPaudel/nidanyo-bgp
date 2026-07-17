@@ -27,6 +27,7 @@ export default async function LabProfilePage() {
         reportMarginBottomMm: settings?.reportMarginBottomMm ?? 14,
         reportMarginXMm: settings?.reportMarginXMm ?? 12,
         requirePhoneVerification: settings?.requirePhoneVerification ?? false,
+        restrictDuePrint: settings?.restrictDuePrint ?? false,
       }}
     />
   );

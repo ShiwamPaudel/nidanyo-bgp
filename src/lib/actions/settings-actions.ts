@@ -46,6 +46,7 @@ export async function updateLabProfile(input: LabProfileInput): Promise<ActionRe
         reportMarginBottomMm: d.reportMarginBottomMm,
         reportMarginXMm: d.reportMarginXMm,
         requirePhoneVerification: d.requirePhoneVerification,
+        restrictDuePrint: d.restrictDuePrint,
         updatedBy: user.id,
       })
       .where(eq(labSettings.labId, user.labId));

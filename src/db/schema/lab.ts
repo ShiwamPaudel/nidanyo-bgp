@@ -45,6 +45,13 @@ export const labSettings = sqliteTable("lab_settings", {
   requirePhoneVerification: integer("require_phone_verification", { mode: "boolean" })
     .notNull()
     .default(false),
+  // When true, a report for a visit with an outstanding due can only be printed
+  // by an admin (settings manager). Non-admin staff (lab technicians, reception,
+  // dispatch) are blocked until the due is cleared. Default false preserves the
+  // existing behaviour for live labs until an admin opts in.
+  restrictDuePrint: integer("restrict_due_print", { mode: "boolean" })
+    .notNull()
+    .default(false),
   ...timestamps,
   ...actorColumns,
 });

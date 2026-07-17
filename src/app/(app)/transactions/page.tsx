@@ -61,6 +61,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                 <TH>Receipt</TH>
                 <TH>Date</TH>
                 <TH>Patient</TH>
+                <TH>Referred by</TH>
                 <TH>Bill</TH>
                 <TH>Mode</TH>
                 <TH>Type</TH>
@@ -74,6 +75,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                   <TD className="font-medium">{r.code}</TD>
                   <TD className="text-muted-foreground">{fmtDateTime(r.paidAt)}</TD>
                   <TD>{r.patientName}</TD>
+                  <TD className="text-muted-foreground">{r.referredBy ?? "Walk-in"}</TD>
                   <TD className="text-muted-foreground">{r.billCode}</TD>
                   <TD>{r.mode}</TD>
                   <TD>{r.kind === "refund" ? <Badge tone="danger">Refund</Badge> : r.kind === "due_collection" ? <Badge tone="info">Due</Badge> : <Badge tone="neutral">Payment</Badge>}</TD>

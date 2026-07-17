@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { FileText, Printer, Eye } from "lucide-react";
-import { requirePermission } from "@/lib/auth/guard";
+import { FileText, Printer, Eye, Lock } from "lucide-react";
+import { requirePermission, hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { listReports } from "@/lib/queries/dispatch";
 import { getLab } from "@/lib/queries/lab";
@@ -28,6 +28,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     listReports(user.labId, { q, status: "all", from, to }),
     getLab(user.labId),
   ]);
+  // Only admins may print reports that still carry a due, when the lab opts in.
+  const isAdmin = hasPermission(user, PERMISSIONS.SETTINGS_MANAGE);
+  const restrictDuePrint = settings?.restrictDuePrint ?? false;
 
   return (
     <>
@@ -65,7 +68,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                   <TD className="text-muted-foreground">{fmtRelative(r.updatedAt)}</TD>
                   <TD>
                     <div className="flex items-center justify-end gap-1">
-                      <a href={`/print/report/${r.visitId}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Print"><Printer className="size-4" /></a>
+                      {restrictDuePrint && !isAdmin && (r.dueAmount ?? 0) > 0 ? (
+                        <span className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Printing blocked — due unpaid" title="Payment due — only an admin can print this report"><Lock className="size-4 text-amber-600" /></span>
+                      ) : (
+                        <a href={`/print/report/${r.visitId}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Print"><Printer className="size-4" /></a>
+                      )}
                       {r.linkActive && r.token && (
                         <a href={`/r/${r.token}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Open public link"><Eye className="size-4" /></a>
                       )}

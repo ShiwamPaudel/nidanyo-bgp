@@ -94,6 +94,15 @@ export function LabProfileForm({ initial }: { initial: LabProfileInput }) {
               <input type="checkbox" checked={form.requirePhoneVerification} onChange={(e) => set("requirePhoneVerification", e.target.checked)} className="size-4 rounded border-border accent-[#075323]" />
               Ask patients to verify their phone before viewing public reports
             </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={form.restrictDuePrint} onChange={(e) => set("restrictDuePrint", e.target.checked)} className="mt-0.5 size-4 rounded border-border accent-[#075323]" />
+              <span>
+                Block report printing when a bill has an outstanding due
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Only admins can print reports for visits that still have dues. Other staff can print once the bill is fully paid.
+                </span>
+              </span>
+            </label>
           </CardContent>
         </Card>
 

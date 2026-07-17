@@ -16,6 +16,7 @@ export const labProfileSchema = z.object({
   reportMarginBottomMm: z.coerce.number().min(0).max(80).default(14),
   reportMarginXMm: z.coerce.number().min(0).max(40).default(12),
   requirePhoneVerification: z.boolean().default(false),
+  restrictDuePrint: z.boolean().default(false),
 });
 export type LabProfileInput = z.infer<typeof labProfileSchema>;
 

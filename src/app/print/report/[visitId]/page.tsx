@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Lock } from "lucide-react";
 import { requireUser, hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { getReportData } from "@/lib/queries/report";
 import { reportUrl } from "@/lib/report-engine";
 import { qrDataUrl } from "@/lib/qr";
+import { formatMoney } from "@/lib/utils";
 import { type ReportEntry } from "@/components/print/report-sheet";
 import { ReportPrintView } from "./report-print-view";
 
@@ -15,6 +18,34 @@ export default async function ReportPrintPage({ params }: { params: Promise<{ vi
   const { visitId } = await params;
   const data = await getReportData(user.labId, visitId);
   if (!data || data.entries.length === 0) notFound();
+
+  // Due-print restriction (admin-configurable). When enabled, a report for a
+  // visit with an outstanding due may only be printed by an admin (settings
+  // manager). Other staff — lab technicians, reception, dispatch — are blocked
+  // until the bill is cleared. Enforced here so every print entry point (Reports
+  // list, Dispatch, direct URL) is covered.
+  const dueAmount = data.bill?.dueAmount ?? 0;
+  const isAdmin = hasPermission(user, PERMISSIONS.SETTINGS_MANAGE);
+  if (data.settings?.restrictDuePrint && dueAmount > 0 && !isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#eef1ee] p-6">
+        <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-card">
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <Lock className="size-6" />
+          </div>
+          <h1 className="text-lg font-semibold text-foreground">Payment due — printing blocked</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This report has an outstanding due of{" "}
+            <span className="font-semibold text-foreground">{formatMoney(dueAmount, data.settings?.currency ?? "NPR")}</span>.
+            Only an administrator can print it until the bill is cleared. Please collect the due or ask an admin.
+          </p>
+          <Link href="/reports" className="mt-6 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-700">
+            Back to Reports
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const publicUrl = data.link ? await reportUrl(data.link.token, user.labId) : null;
   const qr = publicUrl ? await qrDataUrl(publicUrl, 120) : "";

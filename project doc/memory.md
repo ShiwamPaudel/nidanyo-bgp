@@ -1,0 +1,104 @@
+# Nidanyo — Project Memory
+
+> Context primer for new chats so you don't need to re-study the whole codebase.
+> Nidanyo is a **live, production** Laboratory Information & Operations Management
+> System (LIMS) for a diagnostic lab in Nepal, by Infobytes Nepal.
+> **Golden rule: do not disrupt existing data or flows. Prefer additive, low-risk
+> changes. New behaviour that changes existing flows must be opt-in (default off).**
+
+Keep this file up to date whenever you make a meaningful change.
+
+---
+
+## Stack & conventions
+
+- **Next.js 15** (App Router, React 19, RSC), **TypeScript**, **Tailwind**.
+- **DB:** SQLite via **libSQL/Turso**, **Drizzle ORM**. Schema is split under
+  `src/db/schema/*.ts` (barrel `index.ts`). Money fields are `real`; timestamps are
+  epoch integers.
+- **Migrations:** `npm run db:generate` (from schema) → creates `drizzle/NNNN_*.sql`
+  + snapshot. Apply with `npm run db:migrate` (runs `db/migrate.ts`).
+  ⚠️ `db:migrate`/`db:push` connect to `DATABASE_URL` — **could be production**. Never
+  run them casually; generate the SQL and let a human apply it on deploy.
+- **Seed:** `db/seed.ts` only INSERTS rows that don't exist (idempotent, no updates).
+  So **seed does NOT re-sync existing roles/permissions on prod** (see RBAC note).
+- Scripts: `dev`, `build`, `typecheck` (`tsc --noEmit`), `lint`, `db:*`.
+- Platform is Windows; shell is PowerShell (Bash tool also available).
+
+## Auth & RBAC (important)
+
+- Session: signed JWT cookie → `src/lib/auth/session.ts` (`getCurrentUser`). User's
+  `permissions` come from their **role's stored `permissions` array** (a snapshot).
+- Guards: `src/lib/auth/guard.ts` — `requireUser`, `requirePermission` (redirects),
+  `authorize` (throws, for server actions), `hasPermission`, `hasAny`.
+- Permission registry: `src/lib/rbac/permissions.ts`. Default role→perms seed:
+  `src/lib/rbac/roles.ts`. `super_admin`/`lab_admin` are seeded with `ALL_PERMISSIONS`.
+- **Gotcha:** adding a NEW permission to `permissions.ts` does **not** grant it to
+  existing prod roles (their arrays are snapshots; seed won't update them, and the
+  roles editor blocks editing admin roles). So for an "admin-only" gate on live,
+  **key off an existing admin-held permission** — `PERMISSIONS.SETTINGS_MANAGE` is the
+  reliable "is admin" marker (only `super_admin`/`lab_admin` hold it; reception,
+  accounts, lab_technician, dispatch, pathologist, sample_collection do not).
+
+## Domain model (high level)
+
+- `patients` → `visits` → one `bills` per visit → `payments` (money-in events; never
+  deleted, refunds are rows). `visit_tests` are the ordered tests; `bill_items` mirror
+  them. Referral is `visits.referredBy` (per visit) with fallback `patients.referredBy`.
+- Workflow: visit status registered → sample → in_progress → result_pending →
+  awaiting_approval → approved → dispatched. Results: `result_entries` +
+  `result_values`, approved entries drive the report.
+- Reports: `report_links` (public tokenized link, `isActive`, view counts),
+  `report_dispatches`, `report_signatories` (admin-managed signature blocks at report end).
+
+## Key areas / file map
+
+- **Finance queries:** `src/lib/queries/finance.ts` — `listTransactions`,
+  `getEodSummary`, `getTestRevenue`, `getOutstandingDuesTotal`. Date ranges are
+  resolved to **lab-local day bounds** (`src/lib/datetime.ts`), not server UTC.
+- **Transactions UI:** `src/app/(app)/transactions/page.tsx`.
+- **Financial Reports UI:** `src/app/(app)/financial-reports/page.tsx` (aggregate cards
+  only, no per-row transaction table). Its Export PDF/Excel buttons reuse the
+  transactions export.
+- **Transactions exports (shared by both screens):** PDF =
+  `src/app/print/transactions/page.tsx`; CSV = `src/app/api/export/transactions/route.ts`.
+- **Report rendering:** `src/components/print/report-sheet.tsx` (`ReportSheet` = table
+  layout that repeats letterhead via thead/tfoot; `ReportBody` = shared content).
+  Letterhead: `src/components/print/letterhead.tsx`.
+- **Report print page:** `src/app/print/report/[visitId]/page.tsx` (server: auth, data,
+  QR, **due-print gate**) → `report-print-view.tsx` (client: **paged.js** pagination
+  with running header/footer + "Page X of Y"; falls back to `ReportSheet` if paged.js
+  isn't ready/fails). Print CSS in `src/app/globals.css` (`@media print`, `@page`).
+- **Lab settings:** schema `src/db/schema/lab.ts` (`labSettings`); read via
+  `src/lib/queries/lab.ts` `getLab`; edit via `src/app/(app)/settings/lab-profile/`
+  (`page.tsx` builds `initial`, `profile-form.tsx` client form) → server action
+  `updateLabProfile` in `src/lib/actions/settings-actions.ts`; validator
+  `src/lib/validators/settings.ts` (`labProfileSchema`). **When adding a lab setting you
+  must touch all five: schema, validator, action `.set()`, page `initial`, form field.**
+- **Reports list:** `src/app/(app)/reports/page.tsx`. **Dispatch:**
+  `src/app/(app)/dispatch/page.tsx` + `dispatch-actions.tsx` (dispatch already hides the
+  print link until the report link is active/paid).
+
+## Change log (most recent first)
+
+### 2026-07-17 — Four production improvements
+1. **Referral tracking in finance reports.** `listTransactions` now joins `visits` and
+   returns `referredBy = visit.referredBy ?? patient.referredBy ?? null`. Added a
+   **"Referred by"** column (shows `Walk-in` when null) to: Transactions screen table,
+   Transactions PDF (`print/transactions`), and CSV export. Financial Reports screen has
+   no per-row table, but its Export PDF/Excel reuse these, so the column appears there too.
+   *(If a "Collection by referrer" breakdown card is wanted directly on the Financial
+   Reports screen, that's a further additive step — not done, was scoped to "column for now".)*
+2. **Report department heading** (`report-sheet.tsx`) enlarged: `text-[11px] font-bold`
+   → `text-[13px] font-extrabold`.
+3. **Continuation-page top margin.** In `report-print-view.tsx` paged.js CSS, 2nd page
+   onward gets **+8mm** top margin **only when the header band is OFF** (pre-printed
+   letter pad); page 1 keeps its margin via `@page:first`. Header-ON layouts unchanged.
+4. **Admin-configurable due-print restriction.** New `labSettings.restrictDuePrint`
+   boolean (**default false** — preserves existing behaviour until an admin opts in;
+   migration `drizzle/0008_cultured_tony_stark.sql`). When ON, a report whose bill has
+   `dueAmount > 0` can only be printed by an admin (`hasPermission(user, SETTINGS_MANAGE)`).
+   Enforced hard in `print/report/[visitId]/page.tsx` (shows a "Payment due — printing
+   blocked" notice to non-admins), covering all entry points. Soft-gated on the Reports
+   list (lock icon instead of print button). Toggle lives in Lab Profile → "Report & link
+   settings". **Deploy step: run `npm run db:migrate` (migration 0008).**

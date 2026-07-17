@@ -1,0 +1,1 @@
+ALTER TABLE `lab_settings` ADD `restrict_due_print` integer DEFAULT false NOT NULL;

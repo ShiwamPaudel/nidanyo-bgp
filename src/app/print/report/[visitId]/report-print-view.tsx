@@ -73,13 +73,21 @@ export function ReportPrintView(props: ReportSheetProps) {
         const topMm = Math.max(headerMm, fallbackTopMm);
         const bottomMm = Math.max(footerMm, fallbackBottomMm);
 
+        // Continuation pages (2nd onward) get a little extra top breathing room
+        // so a department section that flows onto a new page doesn't sit cramped
+        // against the top edge. Only applied when the header band is OFF (printing
+        // on a pre-printed letter pad): with the band ON the running header must
+        // stay at the same height on every page, so page 1 and 2 keep one margin.
+        const contTopExtraMm = showHeader ? 0 : 8;
+
         const css = `
           @page {
             size: A4;
-            margin: ${topMm}mm ${marginX}mm ${bottomMm}mm ${marginX}mm;
+            margin: ${topMm + contTopExtraMm}mm ${marginX}mm ${bottomMm}mm ${marginX}mm;
             @top-center { content: element(rptHeader); }
             @bottom-center { content: element(rptFooter); }
           }
+          @page:first { margin-top: ${topMm}mm; }
           .rpt-header { position: running(rptHeader); width: 100%; }
           .rpt-footer { position: running(rptFooter); width: 100%; }
           .rpt-content { width: 100%; }

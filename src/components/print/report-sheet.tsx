@@ -198,7 +198,7 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
         // department taller than a full page still has to break — nothing can
         // fit it otherwise.)
         <div key={dept} className="mt-4 break-inside-avoid">
-          <p className="mb-1 bg-[#F1F5F2] px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-700">{dept}</p>
+          <p className="mb-1 bg-[#F1F5F2] px-2 py-1 text-[13px] font-extrabold uppercase tracking-wide text-brand-700">{dept}</p>
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="border-b border-[#0E1B14]/15 text-left text-[#647067]">
