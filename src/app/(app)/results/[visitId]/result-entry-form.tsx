@@ -100,11 +100,19 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
       {byDept.map(({ dept, items }) => (
         <div key={dept} className="space-y-3">
           <p className="rounded bg-[#F1F5F2] px-2 py-1 text-[13px] font-extrabold uppercase tracking-wide text-brand-700">{dept}</p>
-          {items.map(({ entry, ei }) => (
+          {items.map(({ entry, ei }) => {
+            // A "one-liner" test (single value whose only row is named after the
+            // test itself) already shows its name beside the result box as the
+            // row label — so we don't repeat it in the card header. Multi-parameter
+            // tests keep the header, since that's the only place their name appears.
+            const oneLiner =
+              entry.rows.length === 1 &&
+              entry.rows[0].label.trim().toLowerCase() === entry.testName.trim().toLowerCase();
+            return (
         <Card key={entry.entryId}>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              {entry.testName}
+              {!oneLiner && entry.testName}
               <StatusChip status={entry.status} />
             </CardTitle>
           </CardHeader>
@@ -177,7 +185,8 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
             </div>
           </CardContent>
         </Card>
-          ))}
+            );
+          })}
         </div>
       ))}
 
