@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/db/client";
-import { resultEntries, visits, patients, tests, testParameters, resultValues, samples, departments } from "@/db/schema";
+import { resultEntries, visits, patients, tests, testParameters, resultValues, samples, departments, visitTests, testGroupItems } from "@/db/schema";
 import { and, asc, desc, eq, inArray, like, or, sql, ne } from "drizzle-orm";
+import { compareEntries, type OrderableEntry } from "@/lib/report-order";
 
 /**
  * Queue grouped by visit: visits that have at least one result entry needing
@@ -81,10 +82,9 @@ export async function getVisitResults(labId: string, visitId: string) {
   }
   const sampleById = new Map(sampleRows.map((s) => [s.id, s]));
 
-  // Entries are presented department by department (Hematology, then
-  // Biochemistry…) so the bench works through one discipline at a time and the
-  // entry screen mirrors the printed report. Order follows the department's
-  // configured displayOrder rather than the test name.
+  // Entries are presented department by department, and within a group in the
+  // order configured on that group — the same ordering the printed report uses,
+  // so the bench enters results in the order the report will show them.
   const deptRows = await db.select().from(departments).where(eq(departments.labId, labId));
   const deptById = new Map(deptRows.map((d) => [d.id, d]));
   const deptOf = (testId: string) => {
@@ -92,18 +92,29 @@ export async function getVisitResults(labId: string, visitId: string) {
     return t?.departmentId ? deptById.get(t.departmentId) ?? null : null;
   };
 
-  const ordered = [...entries].sort((a, b) => {
-    const da = deptOf(a.testId);
-    const dbb = deptOf(b.testId);
-    // Tests with no department sink to the bottom.
-    const oa = da?.displayOrder ?? Number.MAX_SAFE_INTEGER;
-    const ob = dbb?.displayOrder ?? Number.MAX_SAFE_INTEGER;
-    if (oa !== ob) return oa - ob;
-    const na = da?.name ?? "￿";
-    const nb = dbb?.name ?? "￿";
-    if (na !== nb) return na.localeCompare(nb);
-    return a.testName.localeCompare(b.testName);
-  });
+  const vtRows = await db.select().from(visitTests).where(eq(visitTests.visitId, visitId));
+  const vtById = new Map(vtRows.map((v) => [v.id, v]));
+  const groupIds = [...new Set(vtRows.map((v) => v.groupId).filter(Boolean))] as string[];
+  const itemOrder = new Map<string, number>();
+  if (groupIds.length) {
+    const items = await db.select().from(testGroupItems).where(inArray(testGroupItems.groupId, groupIds));
+    for (const it of items) itemOrder.set(`${it.groupId}|${it.testId}`, it.displayOrder);
+  }
+
+  const orderKey = (e: (typeof entries)[number]): OrderableEntry => {
+    const dept = deptOf(e.testId);
+    const vt = vtById.get(e.visitTestId);
+    return {
+      testId: e.testId,
+      testName: e.testName,
+      departmentName: dept?.name ?? null,
+      departmentOrder: dept?.displayOrder ?? null,
+      groupName: vt?.groupName ?? null,
+      groupItemOrder: vt?.groupId ? itemOrder.get(`${vt.groupId}|${e.testId}`) ?? null : null,
+      testOrder: testById.get(e.testId)?.displayOrder ?? null,
+    };
+  };
+  const ordered = [...entries].sort((a, b) => compareEntries(orderKey(a), orderKey(b)));
 
   return {
     visit,

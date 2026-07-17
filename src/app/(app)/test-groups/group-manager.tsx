@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil, Search } from "lucide-react";
+import { Plus, Pencil, Search, ChevronUp, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -65,8 +65,19 @@ function GroupFormModal({ departments, tests, initial, onClose }: { departments:
   }, [search, tests]);
   const sumPrice = tests.filter((t) => selected.has(t.id)).reduce((s, t) => s + t.price, 0);
 
+  const testById = useMemo(() => new Map(tests.map((t) => [t.id, t])), [tests]);
+
   function toggle(id: string) {
     set("testIds", selected.has(id) ? form.testIds.filter((x) => x !== id) : [...form.testIds, id]);
+  }
+
+  /** Move a test up/down the print order. saveGroup writes displayOrder from this array's order. */
+  function move(index: number, dir: -1 | 1) {
+    const to = index + dir;
+    if (to < 0 || to >= form.testIds.length) return;
+    const next = [...form.testIds];
+    [next[index], next[to]] = [next[to], next[index]];
+    set("testIds", next);
   }
 
   function submit() {
@@ -96,6 +107,38 @@ function GroupFormModal({ departments, tests, initial, onClose }: { departments:
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold">Included tests <Badge tone="neutral">{form.testIds.length}</Badge></p>
           </div>
+
+          {/* Print order. This list's order IS the order the tests appear in on
+              the report and the result entry screen — saveGroup persists it as
+              each item's displayOrder. */}
+          {form.testIds.length > 0 && (
+            <div className="mb-3 rounded-lg border border-border">
+              <p className="border-b border-border px-2 py-1 text-xs text-muted-foreground">
+                Print order — tests appear on the report in this order
+              </p>
+              <div className="scroll-thin max-h-44 overflow-y-auto">
+                {form.testIds.map((id, i) => {
+                  const t = testById.get(id);
+                  return (
+                    <div key={id} className="flex items-center gap-1 border-b border-border/50 px-2 py-1 last:border-0">
+                      <span className="w-5 shrink-0 tabular text-xs text-muted-foreground">{i + 1}</span>
+                      <span className="flex-1 truncate text-sm">{t?.name ?? "(unknown test)"}</span>
+                      <Button variant="ghost" size="icon-sm" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
+                        <ChevronUp className="size-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" aria-label="Move down" disabled={i === form.testIds.length - 1} onClick={() => move(i, 1)}>
+                        <ChevronDown className="size-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" aria-label="Remove" onClick={() => toggle(id)}>
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="relative mb-2">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input className="pl-9" placeholder="Search tests…" value={search} onChange={(e) => setSearch(e.target.value)} />

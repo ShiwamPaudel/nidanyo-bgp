@@ -11,9 +11,12 @@ import {
   reportSignatories,
   departments,
   tests,
+  visitTests,
+  testGroupItems,
 } from "@/db/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getLab, getLabAsset } from "@/lib/queries/lab";
+import { compareEntries, type OrderableEntry } from "@/lib/report-order";
 
 /** Full data needed to render a final report (approved results only). */
 export async function getReportData(labId: string, visitId: string) {
@@ -43,10 +46,40 @@ export async function getReportData(labId: string, visitId: string) {
   const testIds = [...new Set(entries.map((e) => e.testId))];
   const testRows = testIds.length ? await db.select().from(tests).where(inArray(tests.id, testIds)) : [];
   const deptRows = await db.select().from(departments).where(eq(departments.labId, labId));
+  const deptRowById = new Map(deptRows.map((d) => [d.id, d]));
   const deptById = new Map(deptRows.map((d) => [d.id, d.name]));
+  const testById = new Map(testRows.map((t) => [t.id, t]));
   const deptByTest = new Map(testRows.map((t) => [t.id, t.departmentId ? deptById.get(t.departmentId) ?? null : null]));
   const noteByTest = new Map(testRows.map((t) => [t.id, t.description ?? null]));
   const methodByTest = new Map(testRows.map((t) => [t.id, t.method ?? null]));
+
+  // Group tag snapshotted on the visit test + the order configured inside that
+  // group, so a profile like CBC prints in its clinical order rather than
+  // alphabetically.
+  const vtRows = await db.select().from(visitTests).where(eq(visitTests.visitId, visitId));
+  const vtById = new Map(vtRows.map((v) => [v.id, v]));
+  const groupIds = [...new Set(vtRows.map((v) => v.groupId).filter(Boolean))] as string[];
+  const itemOrder = new Map<string, number>(); // `${groupId}|${testId}` -> displayOrder
+  if (groupIds.length) {
+    const items = await db.select().from(testGroupItems).where(inArray(testGroupItems.groupId, groupIds));
+    for (const it of items) itemOrder.set(`${it.groupId}|${it.testId}`, it.displayOrder);
+  }
+
+  const orderKey = (e: (typeof entries)[number]): OrderableEntry => {
+    const t = testById.get(e.testId);
+    const dept = t?.departmentId ? deptRowById.get(t.departmentId) ?? null : null;
+    const vt = vtById.get(e.visitTestId);
+    return {
+      testId: e.testId,
+      testName: e.testName,
+      departmentName: dept?.name ?? null,
+      departmentOrder: dept?.displayOrder ?? null,
+      groupName: vt?.groupName ?? null,
+      groupItemOrder: vt?.groupId ? itemOrder.get(`${vt.groupId}|${e.testId}`) ?? null : null,
+      testOrder: t?.displayOrder ?? null,
+    };
+  };
+  entries.sort((a, b) => compareEntries(orderKey(a), orderKey(b)));
 
   // Report signatories — admin-managed, shown at the end of the report,
   // independent of who approved the results.

@@ -10,5 +10,5 @@ export const metadata = { title: "Departments" };
 export default async function DepartmentsPage() {
   const me = await requirePermission(PERMISSIONS.SETTINGS_MANAGE);
   const rows = await db.select().from(departments).where(eq(departments.labId, me.labId)).orderBy(asc(departments.displayOrder), asc(departments.name));
-  return <MastersManager kind="department" hint="Organize tests by department (Hematology, Biochemistry…). Mark a department billing-only when it is charged but produces no lab report." items={rows.map((r) => ({ id: r.id, name: r.name, isActive: r.isActive, billingOnly: r.billingOnly }))} />;
+  return <MastersManager kind="department" hint="Organize tests by department (Hematology, Biochemistry…). Mark a department billing-only when it is charged but produces no lab report." items={rows.map((r) => ({ id: r.id, name: r.name, isActive: r.isActive, billingOnly: r.billingOnly, displayOrder: r.displayOrder }))} />;
 }

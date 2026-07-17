@@ -17,7 +17,13 @@ export async function saveDepartment(input: { id?: string; name: string; display
     if (!name) return fail("Department name is required.");
     const billingOnly = input.billingOnly ?? false;
     if (input.id) {
-      await db.update(departments).set({ name, displayOrder: input.displayOrder ?? 0, billingOnly }).where(and(eq(departments.id, input.id), eq(departments.labId, user.labId)));
+      // Only write displayOrder when the caller actually supplied one —
+      // defaulting to 0 here silently reset a department's order every time
+      // someone edited its name.
+      await db
+        .update(departments)
+        .set({ name, billingOnly, ...(input.displayOrder != null ? { displayOrder: input.displayOrder } : {}) })
+        .where(and(eq(departments.id, input.id), eq(departments.labId, user.labId)));
     } else {
       await db.insert(departments).values({ labId: user.labId, name, displayOrder: input.displayOrder ?? 0, billingOnly });
     }

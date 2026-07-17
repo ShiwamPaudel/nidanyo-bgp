@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { tests, testParameters, testGroups, testGroupItems } from "@/db/schema";
 import { authorize } from "@/lib/auth/guard";
@@ -184,7 +184,14 @@ export async function loadGroupForEdit(id: string): Promise<ActionResult<GroupIn
     const user = await authorize(PERMISSIONS.CATALOG_VIEW);
     const group = (await db.select().from(testGroups).where(and(eq(testGroups.id, id), eq(testGroups.labId, user.labId)))).at(0);
     if (!group) return fail("Profile not found.");
-    const items = await db.select().from(testGroupItems).where(eq(testGroupItems.groupId, id));
+    // Ordered — testIds carries the group's print order, and saveGroup rewrites
+    // displayOrder from this array's order. Loading unordered would scramble a
+    // group's order every time someone opened and saved it.
+    const items = await db
+      .select()
+      .from(testGroupItems)
+      .where(eq(testGroupItems.groupId, id))
+      .orderBy(asc(testGroupItems.displayOrder));
     return ok({
       id: group.id,
       name: group.name,
