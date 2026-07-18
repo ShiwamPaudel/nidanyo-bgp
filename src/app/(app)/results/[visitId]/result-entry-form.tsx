@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Save, Send, AlertTriangle } from "lucide-react";
@@ -58,6 +58,27 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
   const router = useRouter();
   const [pending, start] = useTransition();
   const [entries, setEntries] = useState<EntryDef[]>(initialEntries);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Pressing Enter in a result field jumps to the next field, just like Tab —
+  // technicians type a value and hit Enter to move down the list without
+  // reaching for the mouse. Only fires from text inputs so it never hijacks a
+  // dropdown's own Enter (select an option). The next field's text is selected
+  // so an existing value can be typed straight over.
+  function handleEnterAdvance(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Enter") return;
+    const target = e.target as HTMLElement;
+    if (target.tagName !== "INPUT") return;
+    e.preventDefault();
+    const root = formRef.current;
+    if (!root) return;
+    const fields = Array.from(root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input:not([disabled]), select:not([disabled])"));
+    const next = fields[fields.indexOf(target as HTMLInputElement) + 1];
+    if (next) {
+      next.focus();
+      if (next instanceof HTMLInputElement) next.select();
+    }
+  }
 
   function setValue(ei: number, ri: number, value: string) {
     setEntries((prev) => {
@@ -114,7 +135,7 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
   });
 
   return (
-    <div className="space-y-4">
+    <div ref={formRef} className="space-y-4" onKeyDown={handleEnterAdvance}>
       {byDept.map(({ dept, items }) => (
         <div key={dept} className="space-y-2">
           <p className="rounded bg-[#F1F5F2] px-2 py-1 text-[13px] font-extrabold uppercase tracking-wide text-brand-700">{dept}</p>

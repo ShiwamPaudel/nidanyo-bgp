@@ -3,13 +3,17 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Banknote, XCircle, RefreshCw, AlertTriangle, FlaskConical } from "lucide-react";
+import { Banknote, XCircle, RefreshCw, AlertTriangle, FlaskConical, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea, Field } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { StatusChip } from "@/components/ui/status-chip";
 import { money } from "@/lib/utils";
 import { receivePayment, cancelVisit, addTestsToVisit } from "@/lib/actions/billing-actions";
 import { previewReferenceRangeSync, syncReferenceRanges, type RangeSyncPreviewItem } from "@/lib/actions/result-actions";
+import { reopenApprovedResults } from "@/lib/actions/approval-actions";
+import { getVisitReportTests } from "@/lib/actions/report-actions";
+import type { ReportTestOption } from "@/lib/queries/report";
 
 type Mode = { id: string; name: string };
 
@@ -252,6 +256,111 @@ export function SyncRangesButton({ visitId }: { visitId: string }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+
+/**
+ * Admin-only: reopen already-approved results for correction. Lists the visit's
+ * approved / dispatched tests, lets the admin pick which to send back to results
+ * entry with a reason. See `reopenApprovedResults` for what it does server-side.
+ */
+export function ReopenResultsButton({ visitId }: { visitId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [loading, startLoad] = useTransition();
+  const [saving, startSave] = useTransition();
+  const [tests, setTests] = useState<ReportTestOption[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [reason, setReason] = useState("");
+
+  const reopenable = (s: string) => s === "approved" || s === "dispatched";
+
+  function openModal() {
+    setOpen(true);
+    setReason("");
+    startLoad(async () => {
+      const res = await getVisitReportTests(visitId);
+      if (res.ok) {
+        const approved = res.data.filter((t) => reopenable(t.status));
+        setTests(approved);
+        setSelected(new Set(approved.map((t) => t.entryId)));
+      } else {
+        toast.error(res.error);
+        setOpen(false);
+      }
+    });
+  }
+
+  function toggle(entryId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(entryId) ? next.delete(entryId) : next.add(entryId);
+      return next;
+    });
+  }
+
+  function submit() {
+    if (selected.size === 0) return toast.error("Select at least one test to reopen.");
+    if (reason.trim().length < 3) return toast.error("Please provide a reason.");
+    startSave(async () => {
+      const res = await reopenApprovedResults({ visitId, entryIds: [...selected], reason });
+      if (res.ok) {
+        toast.success(res.message ?? "Reopened");
+        setOpen(false);
+        router.refresh();
+      } else toast.error(res.error);
+    });
+  }
+
+  return (
+    <>
+      <Button variant="outline" className="text-destructive hover:bg-danger-50" onClick={openModal}>
+        <Undo2 className="size-4" /> Reopen results
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Reopen approved results"
+        description="Admin only. Sends the selected approved tests back to results entry for correction and deactivates the report until they are re-approved."
+        size="sm"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
+            <Button variant="danger" onClick={submit} loading={saving} disabled={loading || selected.size === 0}>
+              Reopen {selected.size} test{selected.size === 1 ? "" : "s"}
+            </Button>
+          </>
+        }
+      >
+        {loading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Loading approved tests…</p>
+        ) : tests.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No approved tests to reopen.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {tests.map((t) => (
+                <label key={t.entryId} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted">
+                  <input type="checkbox" checked={selected.has(t.entryId)} onChange={() => toggle(t.entryId)} className="size-4 accent-brand-700" />
+                  <span className="flex-1">
+                    <span className="font-medium">{t.testName}</span>
+                    {t.department && <span className="block text-xs text-muted-foreground">{t.department}</span>}
+                  </span>
+                  <StatusChip status={t.status} />
+                </label>
+              ))}
+            </div>
+            <Field label="Reason for reopening" required>
+              <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Wrong unit entered for creatinine — please correct" autoFocus />
+            </Field>
+            <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <p>The report link is deactivated until these tests are corrected and re-approved.</p>
             </div>
           </div>
         )}

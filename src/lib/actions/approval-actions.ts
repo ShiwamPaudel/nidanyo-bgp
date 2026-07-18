@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { resultEntries, resultApprovals, visitTests, visits, bills } from "@/db/schema";
+import { resultEntries, resultApprovals, visitTests, visits, bills, reportLinks } from "@/db/schema";
 import { authorize } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { ActionResult, ok, fail, run } from "@/lib/action";
@@ -74,6 +74,64 @@ export async function approveVisit(input: { visitId: string; interpretation?: st
         ? "Approved — report will release once payment is cleared"
         : "Results approved";
     return ok({ released }, message);
+  });
+}
+
+/**
+ * Reopen already-APPROVED (or dispatched) results — admin only.
+ *
+ * Approved results are normally locked. When a mistake is found after approval,
+ * an admin can send the selected tests back to results entry: they return to
+ * `correction_required` with the reason as a correction note, the visit is
+ * pulled back to `result_pending`, and the report link is deactivated so the
+ * invalid report can't be handed out until the tests are corrected and
+ * re-approved (which reactivates the link via the normal approval flow).
+ *
+ * Gated on SETTINGS_MANAGE — the "admin" capability (lab_admin / super_admin);
+ * technicians, reception, pathologists and dispatch cannot do this.
+ */
+export async function reopenApprovedResults(input: { visitId: string; entryIds: string[]; reason: string }): Promise<ActionResult<{ reopened: number }>> {
+  return run(async () => {
+    const user = await authorize(PERMISSIONS.SETTINGS_MANAGE);
+    if (!input.reason || input.reason.trim().length < 3) return fail("Please provide a reason.");
+    if (!input.entryIds?.length) return fail("Select at least one test to reopen.");
+    const visit = (await db.select().from(visits).where(and(eq(visits.id, input.visitId), eq(visits.labId, user.labId)))).at(0);
+    if (!visit) return fail("Visit not found.");
+
+    const target = await db
+      .select()
+      .from(resultEntries)
+      .where(
+        and(
+          eq(resultEntries.visitId, input.visitId),
+          inArray(resultEntries.id, input.entryIds),
+          inArray(resultEntries.status, ["approved", "dispatched"] as never),
+        ),
+      );
+    if (target.length === 0) return fail("No approved results found to reopen.");
+
+    const reason = input.reason.trim();
+    for (const e of target) {
+      await db.update(resultEntries).set({ status: "correction_required", correctionNote: reason }).where(eq(resultEntries.id, e.id));
+      await db.update(visitTests).set({ status: "correction_required" }).where(eq(visitTests.id, e.visitTestId));
+      // Logged as a send-back (the existing approval-log action) — reopening an
+      // approved result is a send-back that skipped the submitted state.
+      await db.insert(resultApprovals).values({ resultEntryId: e.id, action: "sent_back", reason: `Reopened after approval: ${reason}`, actorId: user.id, actorName: user.name });
+    }
+
+    // The report is no longer valid — pull the visit back and deactivate its link.
+    await db.update(visits).set({ status: "result_pending" }).where(eq(visits.id, input.visitId));
+    await db.update(reportLinks).set({ isActive: false }).where(eq(reportLinks.visitId, input.visitId));
+
+    await audit(user, "result.reopen_approved", { entity: "visit", entityId: input.visitId, summary: `Reopened ${target.length} approved result${target.length === 1 ? "" : "s"} for ${visit.code}: ${reason}` });
+    await activity(user, "result_reopened", `Reopened approved results for ${visit.code}`, { entity: "visit", entityId: input.visitId });
+
+    revalidatePath("/results");
+    revalidatePath("/approval");
+    revalidatePath("/reports");
+    revalidatePath("/dispatch");
+    revalidatePath(`/visits/${input.visitId}`);
+    return ok({ reopened: target.length }, `Reopened ${target.length} result${target.length === 1 ? "" : "s"} for correction`);
   });
 }
 

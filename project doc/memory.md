@@ -81,6 +81,19 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-07-18 — Admin reopen of approved results + Enter-to-advance
+- **Reopen approved results (admin only).** `reopenApprovedResults({visitId, entryIds, reason})`
+  in `approval-actions.ts` sends already-approved/dispatched tests back to results entry:
+  status → `correction_required` (reason as correction note), visit → `result_pending`,
+  report link deactivated (reactivates via normal re-approval). Logged as a `sent_back`
+  approval event (reused existing enum — no migration). Gated on `SETTINGS_MANAGE` (admin).
+  UI: `ReopenResultsButton` in `visits/[id]/visit-actions.tsx` (reuses `getVisitReportTests`
+  to list approved tests + checkboxes + reason), shown in the visit-detail header only when
+  `isAdmin && hasApprovedTests && !cancelled`.
+- **Enter advances to next field** in results entry (`result-entry-form.tsx`): container-level
+  `onKeyDown` moves focus to the next enabled input/select (fires only from text inputs, selects
+  the next field's text). Tab still works.
+
 ### 2026-07-18 — Partial submit (submit only the ready tests)
 - Results entry submit is no longer all-or-nothing. `saveResults` now sends **only the
   tests that have a value** for approval (`submitThis = mode==="submit" && anyValue`); empty

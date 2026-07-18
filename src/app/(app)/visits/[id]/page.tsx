@@ -16,7 +16,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { money, ageLabel } from "@/lib/utils";
 import { fmtDate, fmtDateTime } from "@/lib/datetime";
-import { ReceivePaymentButton, CancelVisitButton, SyncRangesButton, SyncGroupTestsButton } from "./visit-actions";
+import { ReceivePaymentButton, CancelVisitButton, SyncRangesButton, SyncGroupTestsButton, ReopenResultsButton } from "./visit-actions";
 
 export default async function VisitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission(PERMISSIONS.VISIT_VIEW);
@@ -31,6 +31,11 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
   const cancelled = visit.status === "cancelled";
   const canPay = hasPermission(user, PERMISSIONS.PAYMENT_RECEIVE) && !cancelled && bill && bill.dueAmount > 0;
   const canCancel = hasPermission(user, PERMISSIONS.VISIT_CANCEL) && !cancelled;
+  // Admin-only: reopen approved results for correction. Shown when the visit has
+  // at least one approved test (its visit-test row stays "approved" even after
+  // dispatch, so this also covers already-dispatched reports).
+  const isAdmin = hasPermission(user, PERMISSIONS.SETTINGS_MANAGE);
+  const hasApprovedTests = visitTests.some((t) => t.status === "approved");
   const publicUrl = reportLink ? await reportUrl(reportLink.token, user.labId) : null;
   // Only offer the range sync when this visit actually has values missing a
   // range the catalog can now fill — otherwise the button never appears.
@@ -53,6 +58,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
             )}
             {groupDrift.length > 0 && <SyncGroupTestsButton visitId={visit.id} drift={groupDrift} />}
             {syncableRanges > 0 && <SyncRangesButton visitId={visit.id} />}
+            {isAdmin && hasApprovedTests && !cancelled && <ReopenResultsButton visitId={visit.id} />}
             {canPay && <ReceivePaymentButton billId={bill!.id} due={bill!.dueAmount} modes={modes.map((m) => ({ id: m.id, name: m.name }))} />}
             {canCancel && <CancelVisitButton visitId={visit.id} visitCode={visit.code} />}
           </>
