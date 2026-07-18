@@ -12,11 +12,21 @@ import { ReportPrintView } from "./report-print-view";
 
 export const metadata = { title: "Report" };
 
-export default async function ReportPrintPage({ params }: { params: Promise<{ visitId: string }> }) {
+export default async function ReportPrintPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ visitId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUser();
   if (!hasPermission(user, PERMISSIONS.REPORT_VIEW)) redirect("/no-access");
   const { visitId } = await params;
-  const data = await getReportData(user.labId, visitId);
+  const sp = await searchParams;
+  // Optional subset of approved entries to print (from the "print selected
+  // tests" picker). Omitted → the full report (every approved test).
+  const entryIds = typeof sp.entries === "string" ? sp.entries.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
+  const data = await getReportData(user.labId, visitId, entryIds);
   if (!data || data.entries.length === 0) notFound();
 
   // Due-print restriction (admin-configurable). When enabled, a report for a

@@ -1,14 +1,30 @@
 import "server-only";
 import { db } from "@/db/client";
 import { visits, patients, bills, reportLinks, reportDispatches, smsLogs } from "@/db/schema";
-import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
 import { labDayBounds, parseLabYmd } from "@/lib/datetime";
 
-/** Visits whose reports are approved (ready for / already dispatched). */
-export async function listReports(labId: string, opts: { q?: string; status?: string; from?: string; to?: string } = {}) {
+/**
+ * Visits whose reports are approved (ready for / already dispatched).
+ *
+ * `includePartial` also surfaces visits that are not fully approved yet but have
+ * at least one approved test — so the completed tests can be printed and handed
+ * over while the rest are still in progress. Used by the Reports page only;
+ * Dispatch leaves it off and keeps showing fully-approved visits.
+ */
+export async function listReports(labId: string, opts: { q?: string; status?: string; from?: string; to?: string; includePartial?: boolean } = {}) {
   const term = opts.q?.trim() ? `%${opts.q.trim()}%` : null;
   const statuses = opts.status === "dispatched" ? ["dispatched"] : opts.status === "ready" ? ["approved"] : ["approved", "dispatched"];
-  const conds = [eq(visits.labId, labId), inArray(visits.status, statuses as never)];
+  const statusCond = opts.includePartial
+    ? or(
+        inArray(visits.status, statuses as never),
+        and(
+          ne(visits.status, "cancelled"),
+          sql`exists (select 1 from result_entries re where re.visit_id = ${visits.id} and re.status = 'approved')`,
+        ),
+      )!
+    : inArray(visits.status, statuses as never);
+  const conds = [eq(visits.labId, labId), statusCond];
   if (term) conds.push(or(like(visits.code, term), like(patients.fullName, term), like(patients.phone, term))!);
   // Date filters are calendar days at the lab, not on the server's clock.
   const fromYmd = opts.from ? parseLabYmd(opts.from) : null;

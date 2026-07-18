@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { fmtRelative } from "@/lib/datetime";
 import { todayISO } from "@/lib/utils";
+import { ReportTestPicker } from "./report-test-picker";
 
 export const metadata = { title: "Reports" };
 
@@ -25,7 +26,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const from = typeof sp.from === "string" ? sp.from : q ? undefined : todayISO();
   const to = typeof sp.to === "string" ? sp.to : q ? undefined : todayISO();
   const [rows, { settings }] = await Promise.all([
-    listReports(user.labId, { q, status: "all", from, to }),
+    // includePartial: also surface visits with at least one approved test (not
+    // fully done yet) so the completed tests can be printed and handed over.
+    listReports(user.labId, { q, status: "all", from, to, includePartial: true }),
     getLab(user.labId),
   ]);
   // Only admins may print reports that still carry a due, when the lab opts in.
@@ -34,7 +37,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Reports" description="Approved laboratory reports. Print, view, or open the secure patient link." />
+      <PageHeader title="Reports" description="Approved laboratory reports. Print the full report or selected tests, view, or open the secure patient link." />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SearchBar placeholder="Search visit, patient or phone…" />
         <DateRangeFilter cal={(settings?.calendarSystem as "AD" | "BS") ?? "AD"} />
@@ -71,7 +74,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                       {restrictDuePrint && !isAdmin && (r.dueAmount ?? 0) > 0 ? (
                         <span className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Printing blocked — due unpaid" title="Payment due — only an admin can print this report"><Lock className="size-4 text-amber-600" /></span>
                       ) : (
-                        <a href={`/print/report/${r.visitId}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Print"><Printer className="size-4" /></a>
+                        <>
+                          <a href={`/print/report/${r.visitId}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Print full report" title="Print full report"><Printer className="size-4" /></a>
+                          <ReportTestPicker visitId={r.visitId} visitCode={r.visitCode} />
+                        </>
                       )}
                       {r.linkActive && r.token && (
                         <a href={`/r/${r.token}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Open public link"><Eye className="size-4" /></a>

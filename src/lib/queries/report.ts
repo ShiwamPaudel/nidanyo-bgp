@@ -18,17 +18,25 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getLab, getLabAsset } from "@/lib/queries/lab";
 import { compareEntries, type OrderableEntry } from "@/lib/report-order";
 
-/** Full data needed to render a final report (approved results only). */
-export async function getReportData(labId: string, visitId: string) {
+/**
+ * Full data needed to render a final report (approved results only).
+ *
+ * `entryIds`, when given, restricts the report to that subset of approved
+ * entries — used to print just one or two completed tests from a visit whose
+ * other tests may still be in progress. Omitted → every approved entry.
+ */
+export async function getReportData(labId: string, visitId: string, onlyEntryIds?: string[]) {
   const visit = (await db.select().from(visits).where(and(eq(visits.id, visitId), eq(visits.labId, labId)))).at(0);
   if (!visit) return null;
   const patient = (await db.select().from(patients).where(eq(patients.id, visit.patientId))).at(0);
   const bill = (await db.select().from(bills).where(eq(bills.visitId, visitId))).at(0);
 
+  const entryConds = [eq(resultEntries.visitId, visitId), eq(resultEntries.status, "approved")];
+  if (onlyEntryIds && onlyEntryIds.length > 0) entryConds.push(inArray(resultEntries.id, onlyEntryIds));
   const entries = await db
     .select()
     .from(resultEntries)
-    .where(and(eq(resultEntries.visitId, visitId), eq(resultEntries.status, "approved")))
+    .where(and(...entryConds))
     .orderBy(asc(resultEntries.testName));
 
   const entryIds = entries.map((e) => e.id);
@@ -116,4 +124,47 @@ export async function getReportData(labId: string, visitId: string) {
       method: methodByTest.get(e.testId) ?? null,
     })),
   };
+}
+
+export interface ReportTestOption {
+  entryId: string;
+  testName: string;
+  department: string | null;
+  status: string;
+}
+
+/**
+ * Every result entry (test) on a visit with its current status — powers the
+ * "print selected tests" picker. Unlike getReportData this is not limited to
+ * approved entries: draft / pending tests are returned too so the UI can show
+ * them (disabled) with their status, while only approved ones are printable.
+ * Ordered by department then test name, mirroring the report.
+ */
+export async function listReportTestOptions(labId: string, visitId: string): Promise<ReportTestOption[]> {
+  const visit = (await db.select({ id: visits.id }).from(visits).where(and(eq(visits.id, visitId), eq(visits.labId, labId)))).at(0);
+  if (!visit) return [];
+
+  const rows = await db.select().from(resultEntries).where(eq(resultEntries.visitId, visitId));
+  if (rows.length === 0) return [];
+
+  const testIds = [...new Set(rows.map((e) => e.testId))];
+  const testRows = testIds.length ? await db.select().from(tests).where(inArray(tests.id, testIds)) : [];
+  const testById = new Map(testRows.map((t) => [t.id, t]));
+  const deptRows = await db.select().from(departments).where(eq(departments.labId, labId));
+  const deptById = new Map(deptRows.map((d) => [d.id, d]));
+
+  return rows
+    .map((e) => {
+      const t = testById.get(e.testId);
+      const dept = t?.departmentId ? deptById.get(t.departmentId) ?? null : null;
+      return {
+        entryId: e.id,
+        testName: e.testName,
+        department: dept?.name ?? null,
+        deptOrder: dept?.displayOrder ?? 999,
+        status: e.status as string,
+      };
+    })
+    .sort((a, b) => a.deptOrder - b.deptOrder || a.testName.localeCompare(b.testName))
+    .map(({ deptOrder: _deptOrder, ...rest }) => rest);
 }

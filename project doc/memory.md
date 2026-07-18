@@ -81,6 +81,39 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-07-18 — Partial submit (submit only the ready tests)
+- Results entry submit is no longer all-or-nothing. `saveResults` now sends **only the
+  tests that have a value** for approval (`submitThis = mode==="submit" && anyValue`); empty
+  tests are kept as **draft** so a technician can submit the ready tests now and finish the
+  rest later. Returns `{ submitted, drafted }` and a message like "2 tests sent for approval
+  · 3 kept as draft".
+- Client guard changed from "every test must have a value" → **"at least one test filled"**.
+  A partial submit keeps you on the visit (`router.push` only when `drafted === 0`).
+- Works because `listApprovalQueue` keys on `resultEntries.status === "submitted"` (not visit
+  status), so a partially-submitted visit still reaches the pathologist; approving those makes
+  it a partial-approved visit, which the Reports page (`includePartial`) + print picker handle.
+  Visit status stays `result_pending` until all tests are submitted (existing `remaining` check).
+
+### 2026-07-18 — Per-department report notes + partial-print (select tests)
+- **Report notes now print per department.** `ReportBody` (`report-sheet.tsx`) renders
+  each test's "Report note / description" right after that department's table (before the
+  next department), instead of pooling them all above the end-of-report line.
+- **Print selected tests (partial report).** A visit's completed tests can be printed
+  while others are still in progress:
+  - `getReportData(labId, visitId, onlyEntryIds?)` takes an optional approved-entry subset.
+  - `/print/report/[visitId]?entries=id1,id2` → prints only those approved entries (omit → full).
+  - New `listReportTestOptions()` query + `getVisitReportTests()` action (`report-actions.ts`)
+    list a visit's tests with status for the picker.
+  - `ReportTestPicker` (client, in `reports/`) — a ListChecks icon on each Reports row opens
+    a modal of the visit's tests with checkboxes + `StatusChip`; only approved/dispatched are
+    selectable, drafts shown disabled. "Print selected" opens the `?entries=` URL.
+  - `listReports(..., { includePartial: true })` now also surfaces visits with ≥1 approved
+    test (not just fully-approved) **on the Reports page only** — Dispatch is unchanged.
+    This is the one behavioral change: partially-completed visits now appear in Reports so
+    their done tests can be handed over; their `StatusChip` shows the real (e.g. "Result
+    pending") state and the report link stays inactive until fully approved + paid.
+  - Due-print restriction still applies (picker/printer hidden, Lock shown) when enabled.
+
 ### 2026-07-17 — Results entry: remove technician remarks, dept headers
 - Removed the **"Technician remarks (optional)" textarea** and its `setRemarks` handler
   from `src/app/(app)/results/[visitId]/result-entry-form.tsx` (technicians don't add

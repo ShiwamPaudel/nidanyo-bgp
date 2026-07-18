@@ -210,7 +210,7 @@ export async function syncReferenceRanges(visitId: string): Promise<ActionResult
 }
 
 /** Save result values for a visit. mode 'draft' keeps editable; 'submit' sends for approval. */
-export async function saveResults(input: { visitId: string; entries: ResultEntryInput[]; mode: "draft" | "submit" }): Promise<ActionResult> {
+export async function saveResults(input: { visitId: string; entries: ResultEntryInput[]; mode: "draft" | "submit" }): Promise<ActionResult<{ submitted: number; drafted: number }>> {
   return run(async () => {
     const user = await authorize(PERMISSIONS.RESULT_ENTER);
     const visit = (await db.select().from(visits).where(and(eq(visits.id, input.visitId), eq(visits.labId, user.labId)))).at(0);
@@ -228,6 +228,8 @@ export async function saveResults(input: { visitId: string; entries: ResultEntry
     const paramById = new Map(paramRows.map((p) => [p.id, p]));
 
     let touched = 0;
+    let submittedCount = 0; // tests actually sent for approval (had a value)
+    let draftedCount = 0; // tests left as draft during a submit (still empty)
     for (const e of input.entries) {
       const entry = entryById.get(e.entryId);
       if (!entry) continue;
@@ -272,8 +274,12 @@ export async function saveResults(input: { visitId: string; entries: ResultEntry
         });
       }
 
-      const newStatus = input.mode === "submit" ? "submitted" : "draft";
-      const version = input.mode === "submit" ? entry.version + 1 : entry.version;
+      // On submit, only tests that actually have a value are sent for approval;
+      // an empty test is kept as a draft so the technician can submit the ready
+      // tests now and finish the rest later. (Draft mode never submits anything.)
+      const submitThis = input.mode === "submit" && anyValue;
+      const newStatus = submitThis ? "submitted" : "draft";
+      const version = submitThis ? entry.version + 1 : entry.version;
 
       await db
         .update(resultEntries)
@@ -284,8 +290,8 @@ export async function saveResults(input: { visitId: string; entries: ResultEntry
           technicianRemarks: e.technicianRemarks ?? null,
           enteredBy: user.id,
           enteredByName: user.name,
-          submittedAt: input.mode === "submit" ? new Date() : entry.submittedAt,
-          correctionNote: input.mode === "submit" ? null : entry.correctionNote,
+          submittedAt: submitThis ? new Date() : entry.submittedAt,
+          correctionNote: submitThis ? null : entry.correctionNote,
           version,
         })
         .where(eq(resultEntries.id, e.entryId));
@@ -293,14 +299,16 @@ export async function saveResults(input: { visitId: string; entries: ResultEntry
       // Per-test status
       await db
         .update(visitTests)
-        .set({ status: input.mode === "submit" ? "result_submitted" : "result_draft" })
+        .set({ status: submitThis ? "result_submitted" : "result_draft" })
         .where(eq(visitTests.id, entry.visitTestId));
 
       // Snapshot on submit
-      if (input.mode === "submit" && anyValue) {
+      if (submitThis) {
         const snap = await db.select().from(resultValues).where(eq(resultValues.resultEntryId, e.entryId));
         await db.insert(resultVersions).values({ resultEntryId: e.entryId, version, snapshot: snap, reason: "Submitted for approval", actorId: user.id, actorName: user.name });
       }
+      if (submitThis) submittedCount++;
+      else if (input.mode === "submit") draftedCount++;
       touched++;
     }
 
@@ -321,7 +329,18 @@ export async function saveResults(input: { visitId: string; entries: ResultEntry
 
     revalidatePath("/results");
     revalidatePath("/approval");
+    revalidatePath("/reports");
     revalidatePath(`/results/${input.visitId}`);
-    return ok(undefined, input.mode === "submit" ? "Results submitted for approval" : "Draft saved");
+
+    let message: string;
+    if (input.mode !== "submit") {
+      message = "Draft saved";
+    } else if (draftedCount > 0) {
+      // Partial submit: some tests went for approval, the empty ones stay draft.
+      message = `${submittedCount} test${submittedCount === 1 ? "" : "s"} sent for approval · ${draftedCount} kept as draft`;
+    } else {
+      message = "Results submitted for approval";
+    }
+    return ok({ submitted: submittedCount, drafted: draftedCount }, message);
   });
 }

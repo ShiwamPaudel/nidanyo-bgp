@@ -84,16 +84,18 @@ export function ResultEntryForm({ visitId, initialEntries }: { visitId: string; 
 
   function save(mode: "draft" | "submit") {
     if (mode === "submit") {
-      const empty = entries.some((e) => !e.locked && e.rows.every((r) => !r.value.trim()));
-      if (empty) return toast.error("Enter at least one value for each test before submitting");
+      // Only the tests that have a value are submitted; the rest stay draft. So
+      // we just need at least one test filled in overall — not every test.
+      const anyFilled = entries.some((e) => !e.locked && e.rows.some((r) => r.value.trim()));
+      if (!anyFilled) return toast.error("Enter values for at least one test before submitting.");
     }
     start(async () => {
       const res = await saveResults({ ...payload(), mode });
       if (res.ok) {
         toast.success(res.message ?? "Saved");
-        if (mode === "submit") {
-          router.push("/results");
-        }
+        // A full submit returns to the queue; a partial submit (some tests left
+        // as draft) keeps you on the visit to finish the remaining tests.
+        if (mode === "submit" && res.data.drafted === 0) router.push("/results");
         router.refresh();
       } else toast.error(res.error);
     });

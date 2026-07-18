@@ -162,13 +162,6 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
   // depend on the approver — they come from the admin-managed signatory list.
   const reportMeta = entries[0]?.entry;
   const interpretations = entries.filter((e) => e.entry.interpretation).map((e) => ({ test: e.entry.testName, text: e.entry.interpretation! }));
-  // Per-test "Report note / description" (the test's methodology/description
-  // statement). These are collected and printed as one block at the very bottom
-  // of the report, just above the end-of-report line — not inline under each
-  // test — with a blank-line gap between notes when more than one test has one.
-  const testNotes = entries
-    .filter((e) => e.note && e.note.trim())
-    .map((e) => ({ test: e.entry.testName, text: e.note!.trim() }));
 
   return (
     <>
@@ -250,6 +243,23 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
               })}
             </tbody>
           </table>
+
+          {/* Per-test "Report note / description" for THIS department — printed
+              right after the department's tests (before the next department),
+              not pooled at the end of the report. A blank-line gap separates
+              notes when more than one test in the department has one. */}
+          {list.some((e) => e.note && e.note.trim()) && (
+            <div className="mt-1.5 text-[9.5px] italic leading-snug text-[#647067]">
+              {list
+                .filter((e) => e.note && e.note.trim())
+                .map((e, idx) => (
+                  <p key={e.entry.id} className={idx > 0 ? "mt-2" : ""}>
+                    <span className="font-medium not-italic text-[#0E1B14]">{e.entry.testName}: </span>
+                    {e.note!.trim()}
+                  </p>
+                ))}
+            </div>
+          )}
         </div>
       ))}
 
@@ -259,18 +269,6 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
           <p className="mb-1 font-semibold text-brand-700">Interpretation / Comments</p>
           {interpretations.map((i, idx) => (
             <p key={idx} className="mb-0.5"><span className="font-medium">{i.test}: </span>{i.text}</p>
-          ))}
-        </div>
-      )}
-
-      {/* Per-test report notes / descriptions — collected here at the bottom,
-          just above the end-of-report line, with a blank line between each. */}
-      {testNotes.length > 0 && (
-        <div className="mt-4 break-inside-avoid text-[9.5px] italic leading-snug text-[#647067]">
-          {testNotes.map((n, idx) => (
-            <p key={idx} className={idx > 0 ? "mt-3" : ""}>
-              <span className="font-medium not-italic text-[#0E1B14]">{n.test}: </span>{n.text}
-            </p>
           ))}
         </div>
       )}
