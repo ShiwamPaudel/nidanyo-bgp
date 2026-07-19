@@ -42,6 +42,7 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
       receivedByName: payments.receivedByName,
       billCode: bills.code,
       billCreatedAt: bills.createdAt,
+      billGrandTotal: bills.grandTotal,
       visitId: bills.visitId,
       patientName: patients.fullName,
       // Who referred the patient for this visit — the visit's referral wins,

@@ -119,14 +119,28 @@ type TxnRow = {
   amount: number;
   mode: string;
   kind: string;
-  reference: string | null;
   receivedByName: string | null;
   billCode: string;
+  billGrandTotal: number;
   patientName: string;
   referredBy: string | null;
 };
 
 function TransactionsTable({ title, rows, total, emptyText }: { title: string; rows: TxnRow[]; total: number; emptyText: string }) {
+  // "Gross Sales" is the bill's full value. A bill can span several payment
+  // rows (partial + due settlement), so its gross is shown once — on its first
+  // row here — and the footer sums distinct bills, keeping the column honest.
+  const seenBills = new Set<string>();
+  let grossTotal = 0;
+  const shaped = rows.map((r) => {
+    const firstForBill = !seenBills.has(r.billCode);
+    if (firstForBill) {
+      seenBills.add(r.billCode);
+      grossTotal += r.billGrandTotal;
+    }
+    return { ...r, gross: firstForBill ? r.billGrandTotal : null };
+  });
+
   return (
     <div className="break-inside-avoid">
       <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">{title}</h3>
@@ -140,13 +154,13 @@ function TransactionsTable({ title, rows, total, emptyText }: { title: string; r
             <th className="py-1.5">Bill</th>
             <th className="py-1.5">Mode</th>
             <th className="py-1.5">Type</th>
-            <th className="py-1.5">Reference</th>
             <th className="py-1.5">Received by</th>
+            <th className="py-1.5 text-right">Gross Sales</th>
             <th className="py-1.5 pr-1 text-right">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {shaped.map((r) => (
             <tr key={r.id} className="border-b border-[#DFE2E2]">
               <td className="py-1 pl-1">{r.code}</td>
               <td className="py-1">{fmtDateTime(r.paidAt)}</td>
@@ -155,8 +169,8 @@ function TransactionsTable({ title, rows, total, emptyText }: { title: string; r
               <td className="py-1">{r.billCode}</td>
               <td className="py-1">{r.mode}</td>
               <td className="py-1 capitalize">{r.kind === "due_collection" ? "Due Collection" : r.kind}</td>
-              <td className="py-1">{r.reference ?? ""}</td>
               <td className="py-1">{r.receivedByName ?? ""}</td>
+              <td className="py-1 text-right tabular">{r.gross == null ? "" : money(r.gross)}</td>
               <td className="py-1 pr-1 text-right tabular">{r.kind === "refund" ? "-" : ""}{money(r.amount)}</td>
             </tr>
           ))}
@@ -166,7 +180,8 @@ function TransactionsTable({ title, rows, total, emptyText }: { title: string; r
         </tbody>
         <tfoot>
           <tr className="border-t border-[#0E1B14]/20 font-bold">
-            <td className="py-1.5 pl-1" colSpan={9}>Collected ({rows.length} {rows.length === 1 ? "transaction" : "transactions"})</td>
+            <td className="py-1.5 pl-1" colSpan={8}>{rows.length} {rows.length === 1 ? "transaction" : "transactions"}</td>
+            <td className="py-1.5 text-right tabular">{money(grossTotal)}</td>
             <td className="py-1.5 pr-1 text-right tabular">{money(total)}</td>
           </tr>
         </tfoot>

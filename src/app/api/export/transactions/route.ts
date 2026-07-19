@@ -42,23 +42,29 @@ export async function GET(req: NextRequest) {
   lines.push(csvRow(["Printed at", fmtDateTime(new Date())]));
   lines.push("");
 
-  const txnHeader = () => csvRow(["Receipt", "Date", "Patient", "Referred By", "Bill", "Mode", "Type", "Reference", "Received By", "Amount"]);
-  const txnLine = (r: (typeof dayRows)[number]) =>
-    csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.billCode, r.mode, r.kind, r.reference ?? "", r.receivedByName ?? "", r.amount.toFixed(2)]);
+  // "Gross Sales" is each bill's full value, shown once per bill so the column
+  // totals to true gross (a bill can appear on several payment rows).
+  const emitTable = (title: string, list: typeof dayRows, collected: number) => {
+    lines.push(csvRow([title]));
+    lines.push(csvRow(["Receipt", "Date", "Patient", "Referred By", "Bill", "Mode", "Type", "Received By", "Gross Sales", "Amount"]));
+    const seen = new Set<string>();
+    let gross = 0;
+    for (const r of list) {
+      const first = !seen.has(r.billCode);
+      if (first) {
+        seen.add(r.billCode);
+        gross += r.billGrandTotal;
+      }
+      lines.push(csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.billCode, r.mode, r.kind, r.receivedByName ?? "", first ? r.billGrandTotal.toFixed(2) : "", r.amount.toFixed(2)]));
+    }
+    lines.push(csvRow(["", "", "", "", "", "", "", "Totals", gross.toFixed(2), collected.toFixed(2)]));
+    lines.push("");
+  };
 
   // Payments & due collections against bills raised in this range
-  lines.push(csvRow(["Payments & Due Collections (This Period's Bills)"]));
-  lines.push(txnHeader());
-  for (const r of dayRows) lines.push(txnLine(r));
-  lines.push(csvRow(["", "", "", "", "", "", "", "", "Collected", dayTotal.toFixed(2)]));
-  lines.push("");
-
+  emitTable("Payments & Due Collections (This Period's Bills)", dayRows, dayTotal);
   // Dues collected today against bills raised on an earlier day
-  lines.push(csvRow(["Dues Collected Today (Previous Days' Bills)"]));
-  lines.push(txnHeader());
-  for (const r of dueRows) lines.push(txnLine(r));
-  lines.push(csvRow(["", "", "", "", "", "", "", "", "Collected", dueTotal.toFixed(2)]));
-  lines.push("");
+  emitTable("Dues Collected Today (Previous Days' Bills)", dueRows, dueTotal);
 
   // Range summary
   lines.push(csvRow(["Summary"]));
