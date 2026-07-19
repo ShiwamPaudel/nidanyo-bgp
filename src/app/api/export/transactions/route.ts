@@ -42,22 +42,30 @@ export async function GET(req: NextRequest) {
   lines.push(csvRow(["Printed at", fmtDateTime(new Date())]));
   lines.push("");
 
-  // "Gross Sales" is each bill's full value, shown once per bill so the column
-  // totals to true gross (a bill can appear on several payment rows).
+  // The bill-level figures (gross/discount/tax/net) belong to the whole bill,
+  // shown once per bill so each column totals honestly (a bill can appear on
+  // several payment rows). "Amount" is the per-payment collection.
   const emitTable = (title: string, list: typeof dayRows, collected: number) => {
     lines.push(csvRow([title]));
-    lines.push(csvRow(["Receipt", "Date", "Patient", "Referred By", "Bill", "Mode", "Type", "Received By", "Gross Sales", "Amount"]));
+    lines.push(csvRow(["Visit", "Date", "Patient", "Referred By", "Mode", "Type", "Received By", "Gross Sales", "Discount", "Tax", "Net Sales", "Amount"]));
     const seen = new Set<string>();
-    let gross = 0;
+    const t = { gross: 0, discount: 0, tax: 0, net: 0 };
     for (const r of list) {
       const first = !seen.has(r.billCode);
       if (first) {
         seen.add(r.billCode);
-        gross += r.billGrandTotal;
+        t.gross += r.billSubtotal;
+        t.discount += r.billDiscount;
+        t.tax += r.billTax;
+        t.net += r.billGrandTotal;
       }
-      lines.push(csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.billCode, r.mode, r.kind, r.receivedByName ?? "", first ? r.billGrandTotal.toFixed(2) : "", r.amount.toFixed(2)]));
+      lines.push(csvRow([
+        r.visitCode, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.mode, r.kind, r.receivedByName ?? "",
+        first ? r.billSubtotal.toFixed(2) : "", first ? r.billDiscount.toFixed(2) : "", first ? r.billTax.toFixed(2) : "", first ? r.billGrandTotal.toFixed(2) : "",
+        r.amount.toFixed(2),
+      ]));
     }
-    lines.push(csvRow(["", "", "", "", "", "", "", "Totals", gross.toFixed(2), collected.toFixed(2)]));
+    lines.push(csvRow(["", "", "", "", "", "", "Totals", t.gross.toFixed(2), t.discount.toFixed(2), t.tax.toFixed(2), t.net.toFixed(2), collected.toFixed(2)]));
     lines.push("");
   };
 

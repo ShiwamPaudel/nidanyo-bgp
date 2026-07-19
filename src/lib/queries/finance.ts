@@ -26,9 +26,11 @@ function dayRange(from?: string, to?: string) {
 export async function listTransactions(labId: string, opts: { from?: string; to?: string; mode?: string; q?: string } = {}) {
   const { s, e } = dayRange(opts.from, opts.to);
   const term = opts.q?.trim() ? `%${opts.q.trim()}%` : null;
-  const conds = [eq(payments.labId, labId), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`];
+  // Cancelled bills (and cancelled visits, whose bill is marked cancelled too)
+  // must never be counted as sales/collection on the report.
+  const conds = [eq(payments.labId, labId), ne(bills.status, "cancelled"), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`];
   if (opts.mode && opts.mode !== "all") conds.push(eq(payments.mode, opts.mode));
-  if (term) conds.push(or(like(payments.code, term), like(bills.code, term), like(patients.fullName, term))!);
+  if (term) conds.push(or(like(payments.code, term), like(bills.code, term), like(visits.code, term), like(patients.fullName, term))!);
 
   const rows = await db
     .select({
@@ -42,8 +44,12 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
       receivedByName: payments.receivedByName,
       billCode: bills.code,
       billCreatedAt: bills.createdAt,
+      billSubtotal: bills.subtotal,
+      billDiscount: bills.discountAmount,
+      billTax: bills.taxAmount,
       billGrandTotal: bills.grandTotal,
       visitId: bills.visitId,
+      visitCode: visits.code,
       patientName: patients.fullName,
       // Who referred the patient for this visit — the visit's referral wins,
       // falling back to the patient's default referrer. Used to track walk-ins
@@ -92,6 +98,8 @@ export async function getEodSummary(labId: string, from?: string, to?: string) {
   const { s, e, start, end } = dayRange(from, to);
 
   const [collectAgg, byMode, byUser, billAgg, discountAgg] = await Promise.all([
+    // Payments on cancelled bills are never counted as collection — a cancelled
+    // visit is off the books, same as it's excluded from the transactions table.
     db
       .select({
         collected: sql<number>`coalesce(sum(case when ${payments.kind} != 'refund' then ${payments.amount} else 0 end),0)`,
@@ -99,17 +107,20 @@ export async function getEodSummary(labId: string, from?: string, to?: string) {
         dueCollected: sql<number>`coalesce(sum(case when ${payments.kind} = 'due_collection' then ${payments.amount} else 0 end),0)`,
       })
       .from(payments)
-      .where(and(eq(payments.labId, labId), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`)),
+      .innerJoin(bills, eq(payments.billId, bills.id))
+      .where(and(eq(payments.labId, labId), ne(bills.status, "cancelled"), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`)),
     db
       .select({ mode: payments.mode, total: sql<number>`coalesce(sum(${payments.amount}),0)` })
       .from(payments)
-      .where(and(eq(payments.labId, labId), ne(payments.kind, "refund"), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`))
+      .innerJoin(bills, eq(payments.billId, bills.id))
+      .where(and(eq(payments.labId, labId), ne(bills.status, "cancelled"), ne(payments.kind, "refund"), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`))
       .groupBy(payments.mode)
       .orderBy(desc(sql`sum(${payments.amount})`)),
     db
       .select({ user: payments.receivedByName, total: sql<number>`coalesce(sum(${payments.amount}),0)`, count: sql<number>`count(*)` })
       .from(payments)
-      .where(and(eq(payments.labId, labId), ne(payments.kind, "refund"), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`))
+      .innerJoin(bills, eq(payments.billId, bills.id))
+      .where(and(eq(payments.labId, labId), ne(bills.status, "cancelled"), ne(payments.kind, "refund"), sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`))
       .groupBy(payments.receivedByName)
       .orderBy(desc(sql`sum(${payments.amount})`)),
     db
@@ -123,7 +134,7 @@ export async function getEodSummary(labId: string, from?: string, to?: string) {
     db
       .select({ discount: sql<number>`coalesce(sum(${bills.discountAmount}),0)`, cancelled: sql<number>`count(*)` })
       .from(bills)
-      .where(and(eq(bills.labId, labId), gte(bills.createdAt, start), lte(bills.createdAt, end))),
+      .where(and(eq(bills.labId, labId), eq(bills.status, "active"), gte(bills.createdAt, start), lte(bills.createdAt, end))),
   ]);
 
   const cancelledAgg = await db
