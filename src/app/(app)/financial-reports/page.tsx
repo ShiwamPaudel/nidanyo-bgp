@@ -106,11 +106,12 @@ export default async function FinancialReportsPage({ searchParams }: { searchPar
             {testRev.length === 0 ? <EmptyState title="No tests" description="No tests ordered in this range." /> : (
               <TableWrap>
                 <Table>
-                  <THead><TR><TH>Test</TH><TH className="text-right">Times</TH><TH className="text-right">Revenue</TH></TR></THead>
+                  <THead><TR><TH>Test / Profile</TH><TH>Type</TH><TH className="text-right">Times</TH><TH className="text-right">Revenue</TH></TR></THead>
                   <TBody>
                     {testRev.slice(0, 20).map((t) => (
-                      <TR key={t.name}>
+                      <TR key={`${t.kind}-${t.name}`}>
                         <TD className="font-medium">{t.name}</TD>
+                        <TD className="text-muted-foreground">{t.kind === "group" ? "Profile" : "Test"}</TD>
                         <TD className="text-right tabular">{t.count}</TD>
                         <TD className="text-right tabular">{money(t.revenue)}</TD>
                       </TR>

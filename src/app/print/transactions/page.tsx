@@ -17,7 +17,7 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
   const from = get("from");
   const to = get("to");
 
-  const [{ rows, total }, testRev, eod, { lab, settings }] = await Promise.all([
+  const [{ dayRows, dayTotal, dueRows, dueTotal }, testRev, eod, { lab, settings }] = await Promise.all([
     listTransactions(user.labId, { from, to, mode: get("mode"), q: get("q") }),
     getTestRevenue(user.labId, from, to),
     getEodSummary(user.labId, from, to),
@@ -61,76 +61,116 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
             <Metric label="Refunds" value={money(eod.refunded)} />
           </div>
 
-          {/* Transactions */}
-          <table className="mt-4 w-full border-collapse text-[11px]">
-            <thead>
-              <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
-                <th className="py-1.5 pl-1">Receipt</th>
-                <th className="py-1.5">Date</th>
-                <th className="py-1.5">Patient</th>
-                <th className="py-1.5">Referred by</th>
-                <th className="py-1.5">Bill</th>
-                <th className="py-1.5">Mode</th>
-                <th className="py-1.5">Type</th>
-                <th className="py-1.5">Reference</th>
-                <th className="py-1.5">Received by</th>
-                <th className="py-1.5 pr-1 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-[#DFE2E2]">
-                  <td className="py-1 pl-1">{r.code}</td>
-                  <td className="py-1">{fmtDateTime(r.paidAt)}</td>
-                  <td className="py-1">{r.patientName}</td>
-                  <td className="py-1">{r.referredBy ?? "Walk-in"}</td>
-                  <td className="py-1">{r.billCode}</td>
-                  <td className="py-1">{r.mode}</td>
-                  <td className="py-1 capitalize">{r.kind === "due_collection" ? "Due Collection" : r.kind}</td>
-                  <td className="py-1">{r.reference ?? ""}</td>
-                  <td className="py-1">{r.receivedByName ?? ""}</td>
-                  <td className="py-1 pr-1 text-right tabular">{r.kind === "refund" ? "-" : ""}{money(r.amount)}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={10} className="py-3 text-center text-[#647067]">No transactions in this range.</td></tr>
-              )}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-[#0E1B14]/20 font-bold">
-                <td className="py-1.5 pl-1" colSpan={9}>Net collected ({rows.length} transactions)</td>
-                <td className="py-1.5 pr-1 text-right tabular">{money(total)}</td>
-              </tr>
-            </tfoot>
-          </table>
+          {/* Payments & due collections against bills raised in this range */}
+          <TransactionsTable
+            title="Payments & Due Collections (This Period's Bills)"
+            rows={dayRows}
+            total={dayTotal}
+            emptyText="No payments against this period's bills."
+          />
 
-          {/* Tests performed */}
+          {/* Dues settled today against bills raised on an earlier day */}
+          <div className="mt-6">
+            <TransactionsTable
+              title="Dues Collected Today (Previous Days' Bills)"
+              rows={dueRows}
+              total={dueTotal}
+              emptyText="No previous-day dues collected in this range."
+            />
+          </div>
+
+          {/* Tests performed — profiles rolled up, standalone tests on their own */}
           <div className="mt-6 break-inside-avoid">
             <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">Tests Performed</h3>
             <table className="mt-2 w-full border-collapse text-[11px]">
               <thead>
                 <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
-                  <th className="py-1.5 pl-1">Test</th>
+                  <th className="py-1.5 pl-1">Test / Profile</th>
+                  <th className="py-1.5">Type</th>
                   <th className="py-1.5 text-right">Times</th>
                   <th className="py-1.5 pr-1 text-right">Revenue</th>
                 </tr>
               </thead>
               <tbody>
                 {testRev.map((t) => (
-                  <tr key={t.name} className="border-b border-[#DFE2E2]">
+                  <tr key={`${t.kind}-${t.name}`} className="border-b border-[#DFE2E2]">
                     <td className="py-1 pl-1">{t.name}</td>
+                    <td className="py-1 text-[#647067]">{t.kind === "group" ? "Profile" : "Test"}</td>
                     <td className="py-1 text-right tabular">{t.count}</td>
                     <td className="py-1 pr-1 text-right tabular">{money(t.revenue)}</td>
                   </tr>
                 ))}
                 {testRev.length === 0 && (
-                  <tr><td colSpan={3} className="py-3 text-center text-[#647067]">No tests performed in this range.</td></tr>
+                  <tr><td colSpan={4} className="py-3 text-center text-[#647067]">No tests performed in this range.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+type TxnRow = {
+  id: string;
+  code: string;
+  paidAt: Date;
+  amount: number;
+  mode: string;
+  kind: string;
+  reference: string | null;
+  receivedByName: string | null;
+  billCode: string;
+  patientName: string;
+  referredBy: string | null;
+};
+
+function TransactionsTable({ title, rows, total, emptyText }: { title: string; rows: TxnRow[]; total: number; emptyText: string }) {
+  return (
+    <div className="break-inside-avoid">
+      <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">{title}</h3>
+      <table className="mt-2 w-full border-collapse text-[11px]">
+        <thead>
+          <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
+            <th className="py-1.5 pl-1">Receipt</th>
+            <th className="py-1.5">Date</th>
+            <th className="py-1.5">Patient</th>
+            <th className="py-1.5">Referred by</th>
+            <th className="py-1.5">Bill</th>
+            <th className="py-1.5">Mode</th>
+            <th className="py-1.5">Type</th>
+            <th className="py-1.5">Reference</th>
+            <th className="py-1.5">Received by</th>
+            <th className="py-1.5 pr-1 text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="border-b border-[#DFE2E2]">
+              <td className="py-1 pl-1">{r.code}</td>
+              <td className="py-1">{fmtDateTime(r.paidAt)}</td>
+              <td className="py-1">{r.patientName}</td>
+              <td className="py-1">{r.referredBy ?? "Walk-in"}</td>
+              <td className="py-1">{r.billCode}</td>
+              <td className="py-1">{r.mode}</td>
+              <td className="py-1 capitalize">{r.kind === "due_collection" ? "Due Collection" : r.kind}</td>
+              <td className="py-1">{r.reference ?? ""}</td>
+              <td className="py-1">{r.receivedByName ?? ""}</td>
+              <td className="py-1 pr-1 text-right tabular">{r.kind === "refund" ? "-" : ""}{money(r.amount)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr><td colSpan={10} className="py-3 text-center text-[#647067]">{emptyText}</td></tr>
+          )}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-[#0E1B14]/20 font-bold">
+            <td className="py-1.5 pl-1" colSpan={9}>Collected ({rows.length} {rows.length === 1 ? "transaction" : "transactions"})</td>
+            <td className="py-1.5 pr-1 text-right tabular">{money(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }

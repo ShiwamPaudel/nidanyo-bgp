@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     q: sp.get("q") ?? undefined,
   };
 
-  const [{ rows, total }, testRev, eod, { lab }] = await Promise.all([
+  const [{ dayRows, dayTotal, dueRows, dueTotal }, testRev, eod, { lab }] = await Promise.all([
     listTransactions(user.labId, filters),
     getTestRevenue(user.labId, filters.from, filters.to),
     getEodSummary(user.labId, filters.from, filters.to),
@@ -42,12 +42,22 @@ export async function GET(req: NextRequest) {
   lines.push(csvRow(["Printed at", fmtDateTime(new Date())]));
   lines.push("");
 
-  // Transactions
-  lines.push(csvRow(["Receipt", "Date", "Patient", "Referred By", "Bill", "Mode", "Type", "Reference", "Received By", "Amount"]));
-  for (const r of rows) {
-    lines.push(csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.billCode, r.mode, r.kind, r.reference ?? "", r.receivedByName ?? "", r.amount.toFixed(2)]));
-  }
-  lines.push(csvRow(["", "", "", "", "", "", "", "", "Net collected", total.toFixed(2)]));
+  const txnHeader = () => csvRow(["Receipt", "Date", "Patient", "Referred By", "Bill", "Mode", "Type", "Reference", "Received By", "Amount"]);
+  const txnLine = (r: (typeof dayRows)[number]) =>
+    csvRow([r.code, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.billCode, r.mode, r.kind, r.reference ?? "", r.receivedByName ?? "", r.amount.toFixed(2)]);
+
+  // Payments & due collections against bills raised in this range
+  lines.push(csvRow(["Payments & Due Collections (This Period's Bills)"]));
+  lines.push(txnHeader());
+  for (const r of dayRows) lines.push(txnLine(r));
+  lines.push(csvRow(["", "", "", "", "", "", "", "", "Collected", dayTotal.toFixed(2)]));
+  lines.push("");
+
+  // Dues collected today against bills raised on an earlier day
+  lines.push(csvRow(["Dues Collected Today (Previous Days' Bills)"]));
+  lines.push(txnHeader());
+  for (const r of dueRows) lines.push(txnLine(r));
+  lines.push(csvRow(["", "", "", "", "", "", "", "", "Collected", dueTotal.toFixed(2)]));
   lines.push("");
 
   // Range summary
@@ -58,11 +68,11 @@ export async function GET(req: NextRequest) {
   lines.push(csvRow(["Refunds", eod.refunded.toFixed(2)]));
   lines.push("");
 
-  // Tests performed in the range
+  // Tests performed in the range — profiles rolled up, standalone tests on their own
   lines.push(csvRow(["Tests performed"]));
-  lines.push(csvRow(["Test", "Times", "Revenue"]));
+  lines.push(csvRow(["Test / Profile", "Type", "Times", "Revenue"]));
   for (const t of testRev) {
-    lines.push(csvRow([t.name, t.count, t.revenue.toFixed(2)]));
+    lines.push(csvRow([t.name, t.kind === "group" ? "Profile" : "Test", t.count, t.revenue.toFixed(2)]));
   }
 
   const csv = "﻿" + lines.join("\r\n"); // BOM so Excel reads UTF-8 correctly

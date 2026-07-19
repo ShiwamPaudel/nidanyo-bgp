@@ -122,17 +122,27 @@ export async function getRevenueTrend(labId: string, days = 14) {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** Most performed tests (all time, top N). */
+/**
+ * Most performed tests (all time, top N). Tests ordered inside a profile/panel
+ * are counted as the profile (CBC, Lipid Profile…), not as their individual
+ * member analytes; standalone tests count on their own. "Count" is distinct
+ * visits the item was performed in.
+ */
 export async function getTopTests(labId: string, limit = 6) {
+  const keyExpr = sql`coalesce(${visitTests.groupId}, ${visitTests.testId})`;
   const rows = await db
-    .select({ name: visitTests.testName, n: sql<number>`count(*)` })
+    .select({
+      name: sql<string>`coalesce(${visitTests.groupName}, ${visitTests.testName})`,
+      kind: sql<string>`case when ${visitTests.groupId} is not null then 'group' else 'test' end`,
+      n: sql<number>`count(distinct ${visitTests.visitId})`,
+    })
     .from(visitTests)
     .innerJoin(visits, eq(visitTests.visitId, visits.id))
     .where(and(eq(visits.labId, labId), ne(visitTests.status, "cancelled")))
-    .groupBy(visitTests.testName)
-    .orderBy(desc(sql`count(*)`))
+    .groupBy(keyExpr)
+    .orderBy(desc(sql`count(distinct ${visitTests.visitId})`))
     .limit(limit);
-  return rows.map((r) => ({ name: r.name, count: Number(r.n) }));
+  return rows.map((r) => ({ name: r.name, kind: r.kind === "group" ? ("group" as const) : ("test" as const), count: Number(r.n) }));
 }
 
 /** Collection split by payment mode category for today. */

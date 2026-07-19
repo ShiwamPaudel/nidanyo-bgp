@@ -41,28 +41,39 @@ export function RevenueTrendChart({ data }: { data: { label: string; total: numb
   );
 }
 
-export function TopTestsChart({ data }: { data: { name: string; count: number }[] }) {
+export function TopTestsChart({ data }: { data: { name: string; count: number; kind?: "group" | "test" }[] }) {
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, left: 8, bottom: 0 }}>
-        <XAxis type="number" hide />
-        <YAxis
-          type="category"
-          dataKey="name"
-          tickLine={false}
-          axisLine={false}
-          width={120}
-          fontSize={11}
-          stroke="#647067"
-          tickFormatter={(v: string) => (v.length > 18 ? v.slice(0, 17) + "…" : v)}
-        />
-        <Tooltip
-          formatter={(v: number) => [v, "Times ordered"]}
-          contentStyle={{ borderRadius: 12, border: "1px solid #DFE2E2", fontSize: 12 }}
-        />
-        <Bar dataKey="count" fill={BLUE} radius={[0, 6, 6, 0]} barSize={16} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, left: 8, bottom: 0 }}>
+          <XAxis type="number" hide />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tickLine={false}
+            axisLine={false}
+            width={120}
+            fontSize={11}
+            stroke="#647067"
+            tickFormatter={(v: string) => (v.length > 18 ? v.slice(0, 17) + "…" : v)}
+          />
+          <Tooltip
+            formatter={(v: number, _n, p) => [v, p?.payload?.kind === "group" ? "Times (profile)" : "Times ordered"]}
+            contentStyle={{ borderRadius: 12, border: "1px solid #DFE2E2", fontSize: 12 }}
+          />
+          {/* Profiles (CBC, Lipid Profile…) in green; standalone tests in blue. */}
+          <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={16}>
+            {data.map((d, i) => (
+              <Cell key={i} fill={d.kind === "group" ? GREEN : BLUE} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="mt-1 flex items-center justify-center gap-4 text-[11px] text-[#647067]">
+        <span className="inline-flex items-center gap-1"><span className="inline-block size-2 rounded-sm" style={{ background: GREEN }} /> Profile</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block size-2 rounded-sm" style={{ background: BLUE }} /> Test</span>
+      </div>
+    </div>
   );
 }
 

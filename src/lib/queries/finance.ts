@@ -41,6 +41,7 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
       reference: payments.reference,
       receivedByName: payments.receivedByName,
       billCode: bills.code,
+      billCreatedAt: bills.createdAt,
       visitId: bills.visitId,
       patientName: patients.fullName,
       // Who referred the patient for this visit — the visit's referral wins,
@@ -62,7 +63,27 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
     referredBy: visitReferredBy ?? patientReferredBy ?? null,
   }));
   const total = shaped.reduce((sum, r) => sum + (r.kind === "refund" ? -r.amount : r.amount), 0);
-  return { rows: shaped, total };
+
+  // Split collections into (a) money against bills raised within this same
+  // range — the day's own sales & due settlements — and (b) dues settled today
+  // against bills raised on an EARLIER day. A payment belongs to the "previous
+  // days" bucket when its bill was created before the range starts.
+  const sumNet = (list: typeof shaped) => list.reduce((acc, r) => acc + (r.kind === "refund" ? -r.amount : r.amount), 0);
+  const isSameDayBill = (r: (typeof shaped)[number]) => {
+    const created = Math.floor((r.billCreatedAt?.getTime() ?? 0) / 1000);
+    return created >= s;
+  };
+  const dayRows = shaped.filter(isSameDayBill);
+  const dueRows = shaped.filter((r) => !isSameDayBill(r));
+
+  return {
+    rows: shaped,
+    total,
+    dayRows,
+    dayTotal: sumNet(dayRows),
+    dueRows,
+    dueTotal: sumNet(dueRows),
+  };
 }
 
 /** End-of-day / range financial summary. */
@@ -133,18 +154,37 @@ export async function getEodSummary(labId: string, from?: string, to?: string) {
   };
 }
 
-/** Test-wise revenue & frequency for a range. */
+/**
+ * Test-wise revenue & frequency for a range.
+ *
+ * Tests ordered as part of a profile/panel (CBC, Lipid Profile…) are rolled up
+ * under the group so the report shows the profile's overall performance instead
+ * of every member analyte on its own row. Standalone tests stay as individual
+ * rows. "Times" counts distinct visits the item was performed in.
+ */
 export async function getTestRevenue(labId: string, from?: string, to?: string) {
   const { start, end } = dayRange(from, to);
+  // Group by the profile when present, otherwise by the test itself.
+  const keyExpr = sql`coalesce(${visitTests.groupId}, ${visitTests.testId})`;
   const rows = await db
-    .select({ name: visitTests.testName, count: sql<number>`count(*)`, revenue: sql<number>`coalesce(sum(${visitTests.price}),0)` })
+    .select({
+      kind: sql<string>`case when ${visitTests.groupId} is not null then 'group' else 'test' end`,
+      name: sql<string>`coalesce(${visitTests.groupName}, ${visitTests.testName})`,
+      count: sql<number>`count(distinct ${visitTests.visitId})`,
+      revenue: sql<number>`coalesce(sum(${visitTests.price}),0)`,
+    })
     .from(visitTests)
     .innerJoin(visits, eq(visitTests.visitId, visits.id))
     .where(and(eq(visits.labId, labId), ne(visitTests.status, "cancelled"), gte(visits.visitDate, start), lte(visits.visitDate, end)))
-    .groupBy(visitTests.testName)
+    .groupBy(keyExpr)
     .orderBy(desc(sql`sum(${visitTests.price})`))
     .limit(100);
-  return rows.map((r) => ({ name: r.name, count: Number(r.count), revenue: Number(r.revenue) }));
+  return rows.map((r) => ({
+    name: r.name,
+    kind: r.kind === "group" ? ("group" as const) : ("test" as const),
+    count: Number(r.count),
+    revenue: Number(r.revenue),
+  }));
 }
 
 export async function getOutstandingDuesTotal(labId: string) {
