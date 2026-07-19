@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
-import { listTransactions, getTestRevenue, getEodSummary } from "@/lib/queries/finance";
+import { listTransactions, getTestRevenue, getEodSummary, getSalesInRange } from "@/lib/queries/finance";
 import { getLab } from "@/lib/queries/lab";
 import { fmtDateTime, fmtDate } from "@/lib/datetime";
 
@@ -25,8 +25,9 @@ export async function GET(req: NextRequest) {
     q: sp.get("q") ?? undefined,
   };
 
-  const [{ dayRows, dayTotal, dueRows, dueTotal }, testRev, eod, { lab }] = await Promise.all([
+  const [{ dayRows, dayTotal, dueRows, dueTotal }, sales, testRev, eod, { lab }] = await Promise.all([
     listTransactions(user.labId, filters),
+    getSalesInRange(user.labId, filters.from, filters.to),
     getTestRevenue(user.labId, filters.from, filters.to),
     getEodSummary(user.labId, filters.from, filters.to),
     getLab(user.labId),
@@ -42,37 +43,28 @@ export async function GET(req: NextRequest) {
   lines.push(csvRow(["Printed at", fmtDateTime(new Date())]));
   lines.push("");
 
-  // The bill-level figures (gross/discount/tax/net) belong to the whole bill,
-  // shown once per bill so each column totals honestly (a bill can appear on
-  // several payment rows). "Amount" is the per-payment collection.
-  const emitTable = (title: string, list: typeof dayRows, collected: number) => {
+  // Sales — one row per bill RAISED in this range (accrual, by bill date). This
+  // is the day's true sales regardless of when the money is collected.
+  lines.push(csvRow(["Sales — Bills Raised (This Period)"]));
+  lines.push(csvRow(["Visit", "Bill", "Date", "Patient", "Referred By", "Gross Sales", "Discount", "Tax", "Net Sales", "Collected", "Due"]));
+  for (const r of sales.rows) {
+    lines.push(csvRow([r.visitCode, r.billCode, fmtDateTime(r.createdAt), r.patientName, r.referredBy ?? "Walk-in", r.subtotal.toFixed(2), r.discount.toFixed(2), r.tax.toFixed(2), r.grandTotal.toFixed(2), r.paidAmount.toFixed(2), r.dueAmount.toFixed(2)]));
+  }
+  lines.push(csvRow(["", "", "", "", "Totals", sales.totals.gross.toFixed(2), sales.totals.discount.toFixed(2), sales.totals.tax.toFixed(2), sales.totals.net.toFixed(2), "", ""]));
+  lines.push("");
+
+  // Collections — money actually received in this range (cash view, by payment date).
+  const emitCollections = (title: string, list: typeof dayRows, collected: number) => {
     lines.push(csvRow([title]));
-    lines.push(csvRow(["Visit", "Date", "Patient", "Referred By", "Mode", "Type", "Received By", "Gross Sales", "Discount", "Tax", "Net Sales", "Amount"]));
-    const seen = new Set<string>();
-    const t = { gross: 0, discount: 0, tax: 0, net: 0 };
+    lines.push(csvRow(["Receipt", "Visit", "Date", "Patient", "Referred By", "Mode", "Type", "Received By", "Amount"]));
     for (const r of list) {
-      const first = !seen.has(r.billCode);
-      if (first) {
-        seen.add(r.billCode);
-        t.gross += r.billSubtotal;
-        t.discount += r.billDiscount;
-        t.tax += r.billTax;
-        t.net += r.billGrandTotal;
-      }
-      lines.push(csvRow([
-        r.visitCode, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.mode, r.kind, r.receivedByName ?? "",
-        first ? r.billSubtotal.toFixed(2) : "", first ? r.billDiscount.toFixed(2) : "", first ? r.billTax.toFixed(2) : "", first ? r.billGrandTotal.toFixed(2) : "",
-        r.amount.toFixed(2),
-      ]));
+      lines.push(csvRow([r.code, r.visitCode, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.mode, r.kind, r.receivedByName ?? "", r.amount.toFixed(2)]));
     }
-    lines.push(csvRow(["", "", "", "", "", "", "Totals", t.gross.toFixed(2), t.discount.toFixed(2), t.tax.toFixed(2), t.net.toFixed(2), collected.toFixed(2)]));
+    lines.push(csvRow(["", "", "", "", "", "", "", "Total", collected.toFixed(2)]));
     lines.push("");
   };
-
-  // Payments & due collections against bills raised in this range
-  emitTable("Payments & Due Collections (This Period's Bills)", dayRows, dayTotal);
-  // Dues collected today against bills raised on an earlier day
-  emitTable("Dues Collected Today (Previous Days' Bills)", dueRows, dueTotal);
+  emitCollections("Collections Received (This Period's Bills)", dayRows, dayTotal);
+  emitCollections("Dues Collected Today (Previous Days' Bills)", dueRows, dueTotal);
 
   // Range summary
   lines.push(csvRow(["Summary"]));

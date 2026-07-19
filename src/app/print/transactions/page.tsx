@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser, hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
-import { listTransactions, getTestRevenue, getEodSummary } from "@/lib/queries/finance";
+import { listTransactions, getTestRevenue, getEodSummary, getSalesInRange } from "@/lib/queries/finance";
 import { getLab } from "@/lib/queries/lab";
 import { PrintToolbar } from "@/components/print/print-sheet";
 import { money } from "@/lib/utils";
@@ -17,8 +17,9 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
   const from = get("from");
   const to = get("to");
 
-  const [{ dayRows, dayTotal, dueRows, dueTotal }, testRev, eod, { lab, settings }] = await Promise.all([
+  const [{ dayRows, dayTotal, dueRows, dueTotal }, sales, testRev, eod, { lab, settings }] = await Promise.all([
     listTransactions(user.labId, { from, to, mode: get("mode"), q: get("q") }),
+    getSalesInRange(user.labId, from, to),
     getTestRevenue(user.labId, from, to),
     getEodSummary(user.labId, from, to),
     getLab(user.labId),
@@ -61,13 +62,67 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
             <Metric label="Refunds" value={money(eod.refunded)} />
           </div>
 
-          {/* Payments & due collections against bills raised in this range */}
-          <TransactionsTable
-            title="Payments & Due Collections (This Period's Bills)"
-            rows={dayRows}
-            total={dayTotal}
-            emptyText="No payments against this period's bills."
-          />
+          {/* Sales — one row per bill RAISED in this range, regardless of when
+              (or whether) it was collected. This is the day's true sales. */}
+          <div className="mt-4">
+            <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">Sales — Bills Raised (This Period)</h3>
+            <table className="mt-2 w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
+                  <th className="py-1.5 pl-1">Visit</th>
+                  <th className="py-1.5">Date</th>
+                  <th className="py-1.5">Patient</th>
+                  <th className="py-1.5">Referred by</th>
+                  <th className="py-1.5 text-right">Gross Sales</th>
+                  <th className="py-1.5 text-right">Discount</th>
+                  <th className="py-1.5 text-right">Tax</th>
+                  <th className="py-1.5 text-right">Net Sales</th>
+                  <th className="py-1.5 text-right">Collected</th>
+                  <th className="py-1.5 pr-1 text-right">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.rows.map((r) => (
+                  <tr key={r.billCode} className="border-b border-[#DFE2E2]">
+                    <td className="py-1 pl-1">{r.visitCode}</td>
+                    <td className="py-1">{fmtDateTime(r.createdAt)}</td>
+                    <td className="py-1">{r.patientName}</td>
+                    <td className="py-1">{r.referredBy ?? "Walk-in"}</td>
+                    <td className="py-1 text-right tabular">{money(r.subtotal)}</td>
+                    <td className="py-1 text-right tabular">{money(r.discount)}</td>
+                    <td className="py-1 text-right tabular">{money(r.tax)}</td>
+                    <td className="py-1 text-right tabular">{money(r.grandTotal)}</td>
+                    <td className="py-1 text-right tabular">{money(r.paidAmount)}</td>
+                    <td className="py-1 pr-1 text-right tabular">{money(r.dueAmount)}</td>
+                  </tr>
+                ))}
+                {sales.rows.length === 0 && (
+                  <tr><td colSpan={10} className="py-3 text-center text-[#647067]">No bills raised in this range.</td></tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-[#0E1B14]/20 font-bold">
+                  <td className="py-1.5 pl-1" colSpan={4}>{sales.rows.length} {sales.rows.length === 1 ? "bill" : "bills"}</td>
+                  <td className="py-1.5 text-right tabular">{money(sales.totals.gross)}</td>
+                  <td className="py-1.5 text-right tabular">{money(sales.totals.discount)}</td>
+                  <td className="py-1.5 text-right tabular">{money(sales.totals.tax)}</td>
+                  <td className="py-1.5 text-right tabular">{money(sales.totals.net)}</td>
+                  <td className="py-1.5 text-right tabular" colSpan={2}></td>
+                </tr>
+              </tfoot>
+            </table>
+            <p className="mt-1 text-[10px] text-[#647067]">Collected / Due reflect the bill&rsquo;s current status. Money is recorded on the day it is received — see the collection tables below.</p>
+          </div>
+
+          {/* Collections — money actually received in this range (by payment date) */}
+          <div className="mt-6">
+            <TransactionsTable
+              title="Collections Received (This Period's Bills)"
+              rows={dayRows}
+              total={dayTotal}
+              emptyText="No payments against this period's bills."
+            />
+          </div>
 
           {/* Dues settled today against bills raised on an earlier day */}
           <div className="mt-6">
@@ -114,88 +169,56 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
 
 type TxnRow = {
   id: string;
+  code: string;
   paidAt: Date;
   amount: number;
   mode: string;
   kind: string;
   receivedByName: string | null;
-  billCode: string;
-  billSubtotal: number;
-  billDiscount: number;
-  billTax: number;
-  billGrandTotal: number;
   visitCode: string;
   patientName: string;
   referredBy: string | null;
 };
 
 function TransactionsTable({ title, rows, total, emptyText }: { title: string; rows: TxnRow[]; total: number; emptyText: string }) {
-  // The bill-level figures (gross/discount/tax/net) belong to the whole bill,
-  // not to each payment. A bill can span several payment rows (partial + due
-  // settlement), so these are shown once — on its first row here — and the
-  // footer sums distinct bills, keeping each money column honest.
-  const seenBills = new Set<string>();
-  const totals = { gross: 0, discount: 0, tax: 0, net: 0 };
-  const shaped = rows.map((r) => {
-    const firstForBill = !seenBills.has(r.billCode);
-    if (firstForBill) {
-      seenBills.add(r.billCode);
-      totals.gross += r.billSubtotal;
-      totals.discount += r.billDiscount;
-      totals.tax += r.billTax;
-      totals.net += r.billGrandTotal;
-    }
-    return { ...r, first: firstForBill };
-  });
-
   return (
     <div className="break-inside-avoid">
       <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">{title}</h3>
       <table className="mt-2 w-full border-collapse text-[11px]">
         <thead>
           <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
-            <th className="py-1.5 pl-1">Visit</th>
+            <th className="py-1.5 pl-1">Receipt</th>
+            <th className="py-1.5">Visit</th>
             <th className="py-1.5">Date</th>
             <th className="py-1.5">Patient</th>
             <th className="py-1.5">Referred by</th>
             <th className="py-1.5">Mode</th>
             <th className="py-1.5">Type</th>
             <th className="py-1.5">Received by</th>
-            <th className="py-1.5 text-right">Gross Sales</th>
-            <th className="py-1.5 text-right">Discount</th>
-            <th className="py-1.5 text-right">Tax</th>
-            <th className="py-1.5 text-right">Net Sales</th>
             <th className="py-1.5 pr-1 text-right">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {shaped.map((r) => (
+          {rows.map((r) => (
             <tr key={r.id} className="border-b border-[#DFE2E2]">
-              <td className="py-1 pl-1">{r.visitCode}</td>
+              <td className="py-1 pl-1">{r.code}</td>
+              <td className="py-1">{r.visitCode}</td>
               <td className="py-1">{fmtDateTime(r.paidAt)}</td>
               <td className="py-1">{r.patientName}</td>
               <td className="py-1">{r.referredBy ?? "Walk-in"}</td>
               <td className="py-1">{r.mode}</td>
               <td className="py-1 capitalize">{r.kind === "due_collection" ? "Due Collection" : r.kind}</td>
               <td className="py-1">{r.receivedByName ?? ""}</td>
-              <td className="py-1 text-right tabular">{r.first ? money(r.billSubtotal) : ""}</td>
-              <td className="py-1 text-right tabular">{r.first ? money(r.billDiscount) : ""}</td>
-              <td className="py-1 text-right tabular">{r.first ? money(r.billTax) : ""}</td>
-              <td className="py-1 text-right tabular">{r.first ? money(r.billGrandTotal) : ""}</td>
               <td className="py-1 pr-1 text-right tabular">{r.kind === "refund" ? "-" : ""}{money(r.amount)}</td>
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={12} className="py-3 text-center text-[#647067]">{emptyText}</td></tr>
+            <tr><td colSpan={9} className="py-3 text-center text-[#647067]">{emptyText}</td></tr>
           )}
         </tbody>
         <tfoot>
           <tr className="border-t border-[#0E1B14]/20 font-bold">
-            <td className="py-1.5 pl-1" colSpan={7}>{rows.length} {rows.length === 1 ? "transaction" : "transactions"}</td>
-            <td className="py-1.5 text-right tabular">{money(totals.gross)}</td>
-            <td className="py-1.5 text-right tabular">{money(totals.discount)}</td>
-            <td className="py-1.5 text-right tabular">{money(totals.tax)}</td>
-            <td className="py-1.5 text-right tabular">{money(totals.net)}</td>
+            <td className="py-1.5 pl-1" colSpan={8}>{rows.length} {rows.length === 1 ? "transaction" : "transactions"}</td>
             <td className="py-1.5 pr-1 text-right tabular">{money(total)}</td>
           </tr>
         </tfoot>

@@ -44,10 +44,6 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
       receivedByName: payments.receivedByName,
       billCode: bills.code,
       billCreatedAt: bills.createdAt,
-      billSubtotal: bills.subtotal,
-      billDiscount: bills.discountAmount,
-      billTax: bills.taxAmount,
-      billGrandTotal: bills.grandTotal,
       visitId: bills.visitId,
       visitCode: visits.code,
       patientName: patients.fullName,
@@ -91,6 +87,51 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
     dueRows,
     dueTotal: sumNet(dueRows),
   };
+}
+
+/**
+ * Sales raised within a date range — one row per bill, keyed on the BILL date,
+ * independent of whether/when it was collected.
+ *
+ * This is the accrual view: a visit billed today is a sale today, even if the
+ * money arrives tomorrow (or never). The payment-driven collection tables key
+ * on payment date instead, so a bill billed today but paid tomorrow would be
+ * invisible on today's collection view — which is why the day's gross sales
+ * must come from here, not from the payments list. Cancelled bills are excluded.
+ */
+export async function getSalesInRange(labId: string, from?: string, to?: string) {
+  const { start, end } = dayRange(from, to);
+  const rows = await db
+    .select({
+      billCode: bills.code,
+      visitCode: visits.code,
+      createdAt: bills.createdAt,
+      patientName: patients.fullName,
+      visitReferredBy: visits.referredBy,
+      patientReferredBy: patients.referredBy,
+      subtotal: bills.subtotal,
+      discount: bills.discountAmount,
+      tax: bills.taxAmount,
+      grandTotal: bills.grandTotal,
+      paidAmount: bills.paidAmount,
+      dueAmount: bills.dueAmount,
+    })
+    .from(bills)
+    .innerJoin(visits, eq(bills.visitId, visits.id))
+    .innerJoin(patients, eq(bills.patientId, patients.id))
+    .where(and(eq(bills.labId, labId), eq(bills.status, "active"), gte(bills.createdAt, start), lte(bills.createdAt, end)))
+    .orderBy(desc(bills.createdAt))
+    .limit(2000);
+
+  const shaped = rows.map(({ visitReferredBy, patientReferredBy, ...r }) => ({
+    ...r,
+    referredBy: visitReferredBy ?? patientReferredBy ?? null,
+  }));
+  const totals = shaped.reduce(
+    (t, r) => ({ gross: t.gross + r.subtotal, discount: t.discount + r.discount, tax: t.tax + r.tax, net: t.net + r.grandTotal }),
+    { gross: 0, discount: 0, tax: 0, net: 0 },
+  );
+  return { rows: shaped, totals };
 }
 
 /** End-of-day / range financial summary. */
