@@ -94,13 +94,28 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
  * independent of whether/when it was collected.
  *
  * This is the accrual view: a visit billed today is a sale today, even if the
- * money arrives tomorrow (or never). The payment-driven collection tables key
- * on payment date instead, so a bill billed today but paid tomorrow would be
- * invisible on today's collection view — which is why the day's gross sales
- * must come from here, not from the payments list. Cancelled bills are excluded.
+ * money arrives tomorrow (or never). A bill billed today but paid tomorrow would
+ * be invisible on a payment-driven list — which is why the day's sales must come
+ * from here. Cancelled bills are excluded.
+ *
+ * `collected` is what was received against the bill WITHIN this period, and
+ * `due` the balance outstanding as of the period's end. A bill raised in the
+ * period has no payments before it, so anything collected later shows up in a
+ * later day's "previous days' dues" table instead — the two never double-count.
  */
 export async function getSalesInRange(labId: string, from?: string, to?: string) {
-  const { start, end } = dayRange(from, to);
+  const { s, e, start, end } = dayRange(from, to);
+  // Money received against each bill inside this period (refunds subtracted).
+  const paidInRange = db
+    .select({
+      billId: payments.billId,
+      collected: sql<number>`coalesce(sum(case when ${payments.kind} = 'refund' then -${payments.amount} else ${payments.amount} end),0)`.as("collected"),
+    })
+    .from(payments)
+    .where(and(sql`${payments.paidAt} >= ${s}`, sql`${payments.paidAt} <= ${e}`))
+    .groupBy(payments.billId)
+    .as("paid_in_range");
+
   const rows = await db
     .select({
       billCode: bills.code,
@@ -113,23 +128,35 @@ export async function getSalesInRange(labId: string, from?: string, to?: string)
       discount: bills.discountAmount,
       tax: bills.taxAmount,
       grandTotal: bills.grandTotal,
-      paidAmount: bills.paidAmount,
-      dueAmount: bills.dueAmount,
+      collected: sql<number>`coalesce(${paidInRange.collected}, 0)`,
     })
     .from(bills)
     .innerJoin(visits, eq(bills.visitId, visits.id))
     .innerJoin(patients, eq(bills.patientId, patients.id))
+    .leftJoin(paidInRange, eq(paidInRange.billId, bills.id))
     .where(and(eq(bills.labId, labId), eq(bills.status, "active"), gte(bills.createdAt, start), lte(bills.createdAt, end)))
     .orderBy(desc(bills.createdAt))
     .limit(2000);
 
-  const shaped = rows.map(({ visitReferredBy, patientReferredBy, ...r }) => ({
-    ...r,
-    referredBy: visitReferredBy ?? patientReferredBy ?? null,
-  }));
+  const shaped = rows.map(({ visitReferredBy, patientReferredBy, collected, ...r }) => {
+    const collectedNum = Number(collected);
+    return {
+      ...r,
+      referredBy: visitReferredBy ?? patientReferredBy ?? null,
+      collected: collectedNum,
+      due: r.grandTotal - collectedNum,
+    };
+  });
   const totals = shaped.reduce(
-    (t, r) => ({ gross: t.gross + r.subtotal, discount: t.discount + r.discount, tax: t.tax + r.tax, net: t.net + r.grandTotal }),
-    { gross: 0, discount: 0, tax: 0, net: 0 },
+    (t, r) => ({
+      gross: t.gross + r.subtotal,
+      discount: t.discount + r.discount,
+      tax: t.tax + r.tax,
+      net: t.net + r.grandTotal,
+      collected: t.collected + r.collected,
+      due: t.due + r.due,
+    }),
+    { gross: 0, discount: 0, tax: 0, net: 0, collected: 0, due: 0 },
   );
   return { rows: shaped, totals };
 }

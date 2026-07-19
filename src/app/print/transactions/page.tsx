@@ -17,7 +17,7 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
   const from = get("from");
   const to = get("to");
 
-  const [{ dayRows, dayTotal, dueRows, dueTotal }, sales, testRev, eod, { lab, settings }] = await Promise.all([
+  const [{ dueRows, dueTotal }, sales, testRev, eod, { lab, settings }] = await Promise.all([
     listTransactions(user.labId, { from, to, mode: get("mode"), q: get("q") }),
     getSalesInRange(user.labId, from, to),
     getTestRevenue(user.labId, from, to),
@@ -62,10 +62,12 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
             <Metric label="Refunds" value={money(eod.refunded)} />
           </div>
 
-          {/* Sales — one row per bill RAISED in this range, regardless of when
-              (or whether) it was collected. This is the day's true sales. */}
+          {/* Main table — one row per bill RAISED in this range. The sale is
+              recorded on the billing day whether or not it was collected;
+              "Collected"/"Due" are as of this period. Anything collected later
+              appears in the dues table below on the day it comes in. */}
           <div className="mt-4">
-            <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">Sales — Bills Raised (This Period)</h3>
+            <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">Sales (Bills Raised This Period)</h3>
             <table className="mt-2 w-full border-collapse text-[11px]">
               <thead>
                 <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
@@ -92,8 +94,8 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                     <td className="py-1 text-right tabular">{money(r.discount)}</td>
                     <td className="py-1 text-right tabular">{money(r.tax)}</td>
                     <td className="py-1 text-right tabular">{money(r.grandTotal)}</td>
-                    <td className="py-1 text-right tabular">{money(r.paidAmount)}</td>
-                    <td className="py-1 pr-1 text-right tabular">{money(r.dueAmount)}</td>
+                    <td className="py-1 text-right tabular">{money(r.collected)}</td>
+                    <td className="py-1 pr-1 text-right tabular">{money(r.due)}</td>
                   </tr>
                 ))}
                 {sales.rows.length === 0 && (
@@ -107,21 +109,11 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                   <td className="py-1.5 text-right tabular">{money(sales.totals.discount)}</td>
                   <td className="py-1.5 text-right tabular">{money(sales.totals.tax)}</td>
                   <td className="py-1.5 text-right tabular">{money(sales.totals.net)}</td>
-                  <td className="py-1.5 text-right tabular" colSpan={2}></td>
+                  <td className="py-1.5 text-right tabular">{money(sales.totals.collected)}</td>
+                  <td className="py-1.5 pr-1 text-right tabular">{money(sales.totals.due)}</td>
                 </tr>
               </tfoot>
             </table>
-            <p className="mt-1 text-[10px] text-[#647067]">Collected / Due reflect the bill&rsquo;s current status. Money is recorded on the day it is received — see the collection tables below.</p>
-          </div>
-
-          {/* Collections — money actually received in this range (by payment date) */}
-          <div className="mt-6">
-            <TransactionsTable
-              title="Collections Received (This Period's Bills)"
-              rows={dayRows}
-              total={dayTotal}
-              emptyText="No payments against this period's bills."
-            />
           </div>
 
           {/* Dues settled today against bills raised on an earlier day */}

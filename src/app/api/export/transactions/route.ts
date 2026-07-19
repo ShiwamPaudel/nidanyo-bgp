@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     q: sp.get("q") ?? undefined,
   };
 
-  const [{ dayRows, dayTotal, dueRows, dueTotal }, sales, testRev, eod, { lab }] = await Promise.all([
+  const [{ dueRows, dueTotal }, sales, testRev, eod, { lab }] = await Promise.all([
     listTransactions(user.labId, filters),
     getSalesInRange(user.labId, filters.from, filters.to),
     getTestRevenue(user.labId, filters.from, filters.to),
@@ -43,28 +43,24 @@ export async function GET(req: NextRequest) {
   lines.push(csvRow(["Printed at", fmtDateTime(new Date())]));
   lines.push("");
 
-  // Sales — one row per bill RAISED in this range (accrual, by bill date). This
-  // is the day's true sales regardless of when the money is collected.
-  lines.push(csvRow(["Sales — Bills Raised (This Period)"]));
+  // Main table — one row per bill RAISED in this range (sale recorded on the
+  // billing day whether or not collected). Collected/Due are as of this period.
+  lines.push(csvRow(["Sales (Bills Raised This Period)"]));
   lines.push(csvRow(["Visit", "Bill", "Date", "Patient", "Referred By", "Gross Sales", "Discount", "Tax", "Net Sales", "Collected", "Due"]));
   for (const r of sales.rows) {
-    lines.push(csvRow([r.visitCode, r.billCode, fmtDateTime(r.createdAt), r.patientName, r.referredBy ?? "Walk-in", r.subtotal.toFixed(2), r.discount.toFixed(2), r.tax.toFixed(2), r.grandTotal.toFixed(2), r.paidAmount.toFixed(2), r.dueAmount.toFixed(2)]));
+    lines.push(csvRow([r.visitCode, r.billCode, fmtDateTime(r.createdAt), r.patientName, r.referredBy ?? "Walk-in", r.subtotal.toFixed(2), r.discount.toFixed(2), r.tax.toFixed(2), r.grandTotal.toFixed(2), r.collected.toFixed(2), r.due.toFixed(2)]));
   }
-  lines.push(csvRow(["", "", "", "", "Totals", sales.totals.gross.toFixed(2), sales.totals.discount.toFixed(2), sales.totals.tax.toFixed(2), sales.totals.net.toFixed(2), "", ""]));
+  lines.push(csvRow(["", "", "", "", "Totals", sales.totals.gross.toFixed(2), sales.totals.discount.toFixed(2), sales.totals.tax.toFixed(2), sales.totals.net.toFixed(2), sales.totals.collected.toFixed(2), sales.totals.due.toFixed(2)]));
   lines.push("");
 
-  // Collections — money actually received in this range (cash view, by payment date).
-  const emitCollections = (title: string, list: typeof dayRows, collected: number) => {
-    lines.push(csvRow([title]));
-    lines.push(csvRow(["Receipt", "Visit", "Date", "Patient", "Referred By", "Mode", "Type", "Received By", "Amount"]));
-    for (const r of list) {
-      lines.push(csvRow([r.code, r.visitCode, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.mode, r.kind, r.receivedByName ?? "", r.amount.toFixed(2)]));
-    }
-    lines.push(csvRow(["", "", "", "", "", "", "", "Total", collected.toFixed(2)]));
-    lines.push("");
-  };
-  emitCollections("Collections Received (This Period's Bills)", dayRows, dayTotal);
-  emitCollections("Dues Collected Today (Previous Days' Bills)", dueRows, dueTotal);
+  // Dues collected today against bills raised on an earlier day (by payment date).
+  lines.push(csvRow(["Dues Collected Today (Previous Days' Bills)"]));
+  lines.push(csvRow(["Receipt", "Visit", "Date", "Patient", "Referred By", "Mode", "Type", "Received By", "Amount"]));
+  for (const r of dueRows) {
+    lines.push(csvRow([r.code, r.visitCode, fmtDateTime(r.paidAt), r.patientName, r.referredBy ?? "Walk-in", r.mode, r.kind, r.receivedByName ?? "", r.amount.toFixed(2)]));
+  }
+  lines.push(csvRow(["", "", "", "", "", "", "", "Total", dueTotal.toFixed(2)]));
+  lines.push("");
 
   // Range summary
   lines.push(csvRow(["Summary"]));
