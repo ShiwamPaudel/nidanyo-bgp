@@ -25,6 +25,8 @@ export interface ReportEntry {
   department: string | null;
   note?: string | null;
   method?: string | null;
+  /** Profile/panel the test was ordered under (e.g. "Complete Blood Count (CBC)"). */
+  groupName?: string | null;
 }
 
 /** Admin-managed signatory shown at the end of the report. */
@@ -209,38 +211,49 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
               </tr>
             </thead>
             <tbody>
-              {list.map((e) => {
-                const only = e.values.length === 1 ? e.values[0] : null;
-                // Collapse to one line only when the single value is the test
-                // itself — a lone parameter under a different name still needs
-                // both names shown, so it keeps the grouped form.
-                const oneLiner =
-                  only != null && only.label.trim().toLowerCase() === e.entry.testName.trim().toLowerCase();
+              {profileSections(list).map((sec) => (
+                <Fragment key={sec.key}>
+                  {/* Profile/panel heading — the tests below belong to it. */}
+                  {sec.groupName && (
+                    <tr className="break-inside-avoid">
+                      <td colSpan={4} className="pt-2.5 text-[11.5px] font-bold text-brand-700">{sec.groupName}</td>
+                    </tr>
+                  )}
+                  {sec.items.map((e) => {
+                    const inGroup = sec.groupName != null;
+                    const only = e.values.length === 1 ? e.values[0] : null;
+                    // Collapse to one line only when the single value is the test
+                    // itself — a lone parameter under a different name still needs
+                    // both names shown, so it keeps the grouped form.
+                    const oneLiner =
+                      only != null && only.label.trim().toLowerCase() === e.entry.testName.trim().toLowerCase();
 
-                return (
-                  <Fragment key={e.entry.id}>
-                    {oneLiner ? (
-                      <ValueRow value={only!} label={e.entry.testName} method={e.method} />
-                    ) : (
-                      <>
-                        <tr className="break-inside-avoid">
-                          <td colSpan={4} className="pt-1.5 text-[11px] font-semibold underline">
-                            {e.entry.testName}
-                          </td>
-                        </tr>
-                        {e.values.map((v) => (
-                          <ValueRow key={v.id} value={v} label={v.label} indent />
-                        ))}
-                        {e.method && (
-                          <tr>
-                            <td colSpan={4} className="pb-1 text-[9.5px] italic text-[#647067]">Method: {e.method}</td>
-                          </tr>
+                    return (
+                      <Fragment key={e.entry.id}>
+                        {oneLiner ? (
+                          <ValueRow value={only!} label={e.entry.testName} method={e.method} indent={inGroup ? 1 : 0} />
+                        ) : (
+                          <>
+                            <tr className="break-inside-avoid">
+                              <td colSpan={4} className={`pt-1.5 text-[11px] font-semibold underline${inGroup ? " pl-3" : ""}`}>
+                                {e.entry.testName}
+                              </td>
+                            </tr>
+                            {e.values.map((v) => (
+                              <ValueRow key={v.id} value={v} label={v.label} indent={inGroup ? 2 : 1} />
+                            ))}
+                            {e.method && (
+                              <tr>
+                                <td colSpan={4} className={`pb-1 text-[9.5px] italic text-[#647067]${inGroup ? " pl-3" : ""}`}>Method: {e.method}</td>
+                              </tr>
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
-                  </Fragment>
-                );
-              })}
+                      </Fragment>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           </table>
 
@@ -311,27 +324,55 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
 }
 
 /**
+ * A department's entries split into profile sections: tests ordered as part of
+ * a group (CBC, Lipid Profile…) sit together under the group's name; standalone
+ * tests get a heading-less section of their own. Entries arrive already sorted
+ * (see `report-order.ts`), so keying by group name preserves that order.
+ */
+function profileSections(list: ReportEntry[]) {
+  type Section = { key: string; groupName: string | null; items: ReportEntry[] };
+  const sections: Section[] = [];
+  const byKey = new Map<string, Section>();
+  for (const e of list) {
+    const name = e.groupName?.trim() ? e.groupName.trim() : null;
+    // Standalone tests never merge with each other — each keeps its own slot.
+    const key = name ?? `solo:${e.entry.id}`;
+    let sec = byKey.get(key);
+    if (!sec) {
+      sec = { key, groupName: name, items: [] };
+      byKey.set(key, sec);
+      sections.push(sec);
+    }
+    sec.items.push(e);
+  }
+  return sections;
+}
+
+/**
  * One result line: Investigation | Result | Unit | Reference Range.
  * Shared by the collapsed single-value form and the parameter rows of a
  * multi-parameter test, so both stay visually identical.
+ * `indent` is the nesting level (0 = flush, 1 = under a test/profile, 2 = a
+ * parameter of a test that itself sits under a profile).
  */
 function ValueRow({
   value: v,
   label,
-  indent,
+  indent = 0,
   method,
 }: {
   value: ReportValue;
   label: string;
-  indent?: boolean;
+  indent?: 0 | 1 | 2;
   method?: string | null;
 }) {
   const flag = v.flag as ResultFlag;
   const critical = flag === "critical_low" || flag === "critical_high";
   const abnormal = flag !== "normal";
+  const pad = indent === 2 ? " pl-6" : indent === 1 ? " pl-3" : "";
   return (
     <tr className="break-inside-avoid border-b border-[#F0F2F0]">
-      <td className={`py-1 align-top${indent ? " pl-3" : ""}`}>
+      <td className={`py-1 align-top${pad}`}>
         {label}
         {method && (
           <span className="block text-[9.5px] italic text-[#647067]">Method: {method}</span>

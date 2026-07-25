@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Printer, ListChecks } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { StatusChip } from "@/components/ui/status-chip";
 import { cn } from "@/lib/utils";
 import { getVisitReportTests } from "@/lib/actions/report-actions";
@@ -14,15 +15,80 @@ import type { ReportTestOption } from "@/lib/queries/report";
 const isPrintable = (status: string) => status === "approved" || status === "dispatched";
 
 /**
- * Lets staff pick which of a visit's tests to print — so a completed test or two
- * can be handed to the patient while the rest are still in progress. Draft /
- * pending tests are listed (with their status) but not selectable.
+ * One selectable line: either a standalone test or a whole profile (CBC, Lipid
+ * Profile…). A profile is offered as a single item — its member tests are not
+ * listed individually, because a panel is printed and handed over as a unit.
+ */
+interface PickerItem {
+  key: string;
+  label: string;
+  /** Shown only when every member test shares it. */
+  department: string | null;
+  isGroup: boolean;
+  entryIds: string[];
+  printableIds: string[];
+  statuses: string[];
+}
+
+/** Roll a visit's tests up into standalone tests + one item per profile. */
+function buildItems(tests: ReportTestOption[]): PickerItem[] {
+  const items: PickerItem[] = [];
+  const byGroup = new Map<string, PickerItem>();
+
+  for (const t of tests) {
+    const groupName = t.groupName?.trim() || "";
+    const groupKey = t.groupId ?? (groupName ? `name:${groupName}` : null);
+
+    if (!groupKey) {
+      items.push({
+        key: t.entryId,
+        label: t.testName,
+        department: t.department,
+        isGroup: false,
+        entryIds: [t.entryId],
+        printableIds: isPrintable(t.status) ? [t.entryId] : [],
+        statuses: [t.status],
+      });
+      continue;
+    }
+
+    let item = byGroup.get(groupKey);
+    if (!item) {
+      item = {
+        key: `group:${groupKey}`,
+        label: groupName || t.testName,
+        department: t.department,
+        isGroup: true,
+        entryIds: [],
+        printableIds: [],
+        statuses: [],
+      };
+      byGroup.set(groupKey, item);
+      items.push(item);
+    } else if (item.department !== t.department) {
+      item.department = null; // members span departments — don't claim one
+    }
+
+    item.entryIds.push(t.entryId);
+    if (isPrintable(t.status)) item.printableIds.push(t.entryId);
+    item.statuses.push(t.status);
+  }
+
+  return items;
+}
+
+/**
+ * Lets staff pick what of a visit to print — so a completed test or profile can
+ * be handed to the patient while the rest are still in progress. Tests that
+ * aren't approved yet are listed (with their status) but not selectable.
  */
 export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visitCode: string }) {
   const [open, setOpen] = useState(false);
   const [loading, start] = useTransition();
   const [tests, setTests] = useState<ReportTestOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const items = useMemo(() => buildItems(tests), [tests]);
 
   function openPicker() {
     setOpen(true);
@@ -39,10 +105,15 @@ export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visi
     });
   }
 
-  function toggle(entryId: string) {
+  /** Toggling a profile turns all of its printable tests on or off together. */
+  function toggle(item: PickerItem) {
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(entryId) ? next.delete(entryId) : next.add(entryId);
+      const allOn = item.printableIds.length > 0 && item.printableIds.every((id) => next.has(id));
+      for (const id of item.printableIds) {
+        if (allOn) next.delete(id);
+        else next.add(id);
+      }
       return next;
     });
   }
@@ -71,7 +142,7 @@ export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visi
         open={open}
         onClose={() => setOpen(false)}
         title={`Print selected tests · ${visitCode}`}
-        description="Pick the approved tests to include. Draft / pending tests can't be printed until approved."
+        description="Pick the approved tests to include — a profile is selected as a whole. Draft / pending tests can't be printed until approved."
         size="sm"
         footer={
           <>
@@ -84,7 +155,7 @@ export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visi
       >
         {loading ? (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading tests…</p>
-        ) : tests.length === 0 ? (
+        ) : items.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No tests found for this visit.</p>
         ) : (
           <div className="space-y-1">
@@ -93,11 +164,13 @@ export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visi
                 None of these tests are approved yet, so there is nothing to print.
               </p>
             )}
-            {tests.map((t) => {
-              const printable = isPrintable(t.status);
+            {items.map((item) => {
+              const printable = item.printableIds.length > 0;
+              const checked = printable && item.printableIds.every((id) => selected.has(id));
+              const meta = [item.department, item.isGroup ? `${item.entryIds.length} tests` : null].filter(Boolean).join(" · ");
               return (
                 <label
-                  key={t.entryId}
+                  key={item.key}
                   className={cn(
                     "flex items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm",
                     printable ? "cursor-pointer hover:bg-muted" : "cursor-not-allowed opacity-60",
@@ -106,15 +179,15 @@ export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visi
                   <input
                     type="checkbox"
                     disabled={!printable}
-                    checked={selected.has(t.entryId)}
-                    onChange={() => toggle(t.entryId)}
+                    checked={checked}
+                    onChange={() => toggle(item)}
                     className="size-4 accent-brand-700"
                   />
                   <span className="flex-1">
-                    <span className="font-medium">{t.testName}</span>
-                    {t.department && <span className="block text-xs text-muted-foreground">{t.department}</span>}
+                    <span className="font-medium">{item.label}</span>
+                    {meta && <span className="block text-xs text-muted-foreground">{meta}</span>}
                   </span>
-                  <StatusChip status={t.status} />
+                  <ItemStatus item={item} />
                 </label>
               );
             })}
@@ -123,4 +196,14 @@ export function ReportTestPicker({ visitId, visitCode }: { visitId: string; visi
       </Modal>
     </>
   );
+}
+
+/** A profile with mixed member statuses can't use a single workflow chip. */
+function ItemStatus({ item }: { item: PickerItem }) {
+  const distinct = [...new Set(item.statuses)];
+  if (distinct.length === 1) return <StatusChip status={distinct[0]} />;
+  if (item.printableIds.length > 0) {
+    return <Badge tone="warning">{item.printableIds.length} of {item.entryIds.length} approved</Badge>;
+  }
+  return <Badge tone="neutral">In progress</Badge>;
 }

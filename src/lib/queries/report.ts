@@ -122,6 +122,9 @@ export async function getReportData(labId: string, visitId: string, onlyEntryIds
       department: deptByTest.get(e.testId) ?? null,
       note: noteByTest.get(e.testId) ?? null,
       method: methodByTest.get(e.testId) ?? null,
+      // Profile/panel this test was ordered under (snapshot on the visit test),
+      // so the report can print "Complete Blood Count (CBC)" above its tests.
+      groupName: vtById.get(e.visitTestId)?.groupName ?? null,
     })),
   };
 }
@@ -131,6 +134,9 @@ export interface ReportTestOption {
   testName: string;
   department: string | null;
   status: string;
+  /** Profile/panel the test was ordered under, if any (snapshot on the visit test). */
+  groupId: string | null;
+  groupName: string | null;
 }
 
 /**
@@ -152,19 +158,33 @@ export async function listReportTestOptions(labId: string, visitId: string): Pro
   const testById = new Map(testRows.map((t) => [t.id, t]));
   const deptRows = await db.select().from(departments).where(eq(departments.labId, labId));
   const deptById = new Map(deptRows.map((d) => [d.id, d]));
+  // Profile tag snapshotted on the visit test — lets the picker offer a whole
+  // panel (CBC…) as one item instead of its member tests one by one.
+  const vtRows = await db.select().from(visitTests).where(eq(visitTests.visitId, visitId));
+  const vtById = new Map(vtRows.map((v) => [v.id, v]));
 
   return rows
     .map((e) => {
       const t = testById.get(e.testId);
       const dept = t?.departmentId ? deptById.get(t.departmentId) ?? null : null;
+      const vt = vtById.get(e.visitTestId);
       return {
         entryId: e.id,
         testName: e.testName,
         department: dept?.name ?? null,
         deptOrder: dept?.displayOrder ?? 999,
         status: e.status as string,
+        groupId: vt?.groupId ?? null,
+        groupName: vt?.groupName ?? null,
       };
     })
-    .sort((a, b) => a.deptOrder - b.deptOrder || a.testName.localeCompare(b.testName))
+    // Department, then standalone tests before profiles, then a profile's own
+    // tests kept together — the same shape the printed report uses.
+    .sort(
+      (a, b) =>
+        a.deptOrder - b.deptOrder ||
+        (a.groupName ?? "").localeCompare(b.groupName ?? "") ||
+        a.testName.localeCompare(b.testName),
+    )
     .map(({ deptOrder: _deptOrder, ...rest }) => rest);
 }

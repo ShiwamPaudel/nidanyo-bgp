@@ -81,6 +81,34 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-07-25 — Profile names on the report + profile-level print picker + gross sales
+1. **Report prints the profile/panel name.** `getReportData` now returns `groupName` per
+   entry (from the `visit_tests.group_name` snapshot) and `ReportBody`
+   (`report-sheet.tsx`) splits each department's entries into **profile sections** via a
+   new `profileSections()` helper: a group's tests print under one heading (e.g.
+   "Complete Blood Count (CBC)") in brand colour, with its tests indented one level under
+   it (`ValueRow`'s `indent` went from boolean → level `0 | 1 | 2`, so a parameter of a
+   test inside a profile indents twice). Standalone tests are unchanged (no heading, same
+   indentation as before). Applies everywhere `ReportBody`/`ReportSheet` render: print
+   view, table fallback, and the public `/r/[token]` report. Presentation only — the
+   department grouping, ordering (`report-order.ts`) and per-department notes are untouched.
+2. **Print picker offers a profile as one item.** `ReportTestOption` gained
+   `groupId`/`groupName` (`listReportTestOptions`, which also now sorts department →
+   group → test name so a profile's tests stay together). `ReportTestPicker` rolls the
+   flat list up with a new `buildItems()`: **one row per profile** (label = group name,
+   sub-line "Department · N tests") instead of its member tests, standalone tests as
+   before. Ticking a profile selects/deselects all of its printable entries at once;
+   the `?entries=` URL is still a list of entry ids, so the printer is unchanged. Status
+   chip for a profile: the common status when all members agree, else "n of m approved"
+   (warning) or "In progress". **The reopen-results modal reuses the same query but still
+   lists individual tests — corrections are per test — and is unaffected.**
+3. **Transactions headline card is now "Gross sales (range)"** — was "Net collected
+   (range)". Value comes from `getSalesInRange(...).totals.gross` (sum of bill subtotals
+   for bills *raised* in the range, matching the "Gross Sales" column already used by the
+   transactions PDF/CSV), not from payments collected. The three page queries now run in
+   one `Promise.all`. The Transactions count card, the table, and the PDF/Excel exports
+   are unchanged.
+
 ### 2026-07-18 — Admin reopen of approved results + Enter-to-advance
 - **Reopen approved results (admin only).** `reopenApprovedResults({visitId, entryIds, reason})`
   in `approval-actions.ts` sends already-approved/dispatched tests back to results entry:
