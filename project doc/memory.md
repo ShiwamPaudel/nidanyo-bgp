@@ -81,6 +81,45 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-07-26 — Transactions export: dues cleared later read as settled
+- **The problem.** `getSalesInRange` computed `due = grandTotal − collected-in-range`, so
+  re-exporting the day a bill was raised kept showing the old due even after the patient
+  had cleared it days later. The export is meant to be re-printable at any time and must
+  reflect reality *now*.
+- **`getSalesInRange` (`src/lib/queries/finance.ts`) now returns three separate figures
+  per bill**, so the day's cash is not disturbed while the due reads true:
+  - `collected` — received **within the period** (unchanged; the day's own takings, so
+    end-of-day cash reconciliation for that date never moves).
+  - `settledLater` — **new**; received against the same bill **after** the period, via a
+    second aggregated subquery (`paid_after_range`, `payments.paidAt > rangeEnd`), mirroring
+    the existing `paid_in_range` one. A bill raised in the range can have no payments before
+    it, so in-range + after-range is everything ever collected on it.
+  - `due` — **now the live outstanding** (`bills.dueAmount`, kept current by `recomputeBill`),
+    clamped at ≥ 0, instead of a period-derived figure. Matches how the Financial Reports
+    "Due generated" card and the Dues screen already read dues, so the screens now agree.
+  - `totals` gained `settledLater` alongside the existing keys. Barring refunds,
+    Collected + Settled later + Due = Net sales on every row.
+- **Both exports show the new column** (the only layout change): PDF
+  (`src/app/print/transactions/page.tsx`) — "Collected · Settled Later · Due (Now)", tfoot
+  colSpans bumped to 11 columns, plus a one-line caption under the section heading
+  explaining the three; CSV (`src/app/api/export/transactions/route.ts`) — same three
+  headers/values/totals. A row with nothing settled later prints "—" in the PDF.
+- **Deliberately unchanged:** the money still counts on the day it actually arrived — the
+  "Dues Collected Today (Previous Days' Bills)" table (payment-date driven, from
+  `listTransactions`) is untouched, so nothing is double-counted across the two reports.
+  `getEodSummary`, the summary strip, Tests Performed, the Transactions screen (uses only
+  `totals.gross`), and the Dues screen are all untouched.
+- **Verified** against a throwaway copy of `local.db` (never the configured DATABASE_URL):
+  bill of 1000 raised 20 Jul, 600 paid that day, 400 cleared 25 Jul → the 20 Jul export
+  reads Collected 600 · Settled later 400 · **Due 0**, the bill is not re-listed as a sale
+  on the 25th, and the 400 still shows in that day's previous-days'-dues total. Regression
+  case (400 never paid) still reads Due 400.
+- **Refund caveat:** `bills.dueAmount` is `grandTotal − paid` and does not add refunds back,
+  while `collected` nets them off — so on a bill refunded after the period, Collected +
+  Settled later + Due can fall short of Net sales by the refunded amount. The refund itself
+  is still reported in the summary's Refunds line and the transactions table. Pre-existing
+  behaviour (the old Due column overstated by the same amount); left alone.
+
 ### 2026-07-25 — Profile names on the report + profile-level print picker + gross sales
 1. **Report prints the profile/panel name.** `getReportData` now returns `groupName` per
    entry (from the `visit_tests.group_name` snapshot) and `ReportBody`

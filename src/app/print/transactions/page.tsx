@@ -63,11 +63,17 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
           </div>
 
           {/* Main table — one row per bill RAISED in this range. The sale is
-              recorded on the billing day whether or not it was collected;
-              "Collected"/"Due" are as of this period. Anything collected later
-              appears in the dues table below on the day it comes in. */}
+              recorded on the billing day whether or not it was collected.
+              "Collected" is this period's own takings; a due settled afterwards
+              shows under "Settled later" and "Due (now)" is what is still
+              outstanding today — so re-printing an old day shows no due once the
+              patient has paid up. The money itself is still counted on the day it
+              came in, in the dues table below. */}
           <div className="mt-4">
             <h3 className="inline-block rounded bg-brand-50 px-3 py-0.5 text-[12px] font-bold uppercase tracking-wide text-brand-700">Sales (Bills Raised This Period)</h3>
+            <p className="mt-1 text-[9.5px] italic text-[#647067]">
+              Collected = received during this period · Settled later = dues of these bills cleared after it · Due (now) = still outstanding today
+            </p>
             <table className="mt-2 w-full border-collapse text-[11px]">
               <thead>
                 <tr className="border-y border-[#0E1B14]/15 bg-brand-50/60 text-left">
@@ -80,7 +86,8 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                   <th className="py-1.5 text-right">Tax</th>
                   <th className="py-1.5 text-right">Net Sales</th>
                   <th className="py-1.5 text-right">Collected</th>
-                  <th className="py-1.5 pr-1 text-right">Due</th>
+                  <th className="py-1.5 text-right">Settled Later</th>
+                  <th className="py-1.5 pr-1 text-right">Due (Now)</th>
                 </tr>
               </thead>
               <tbody>
@@ -95,11 +102,12 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                     <td className="py-1 text-right tabular">{money(r.tax)}</td>
                     <td className="py-1 text-right tabular">{money(r.grandTotal)}</td>
                     <td className="py-1 text-right tabular">{money(r.collected)}</td>
+                    <td className="py-1 text-right tabular">{r.settledLater ? money(r.settledLater) : "—"}</td>
                     <td className="py-1 pr-1 text-right tabular">{money(r.due)}</td>
                   </tr>
                 ))}
                 {sales.rows.length === 0 && (
-                  <tr><td colSpan={10} className="py-3 text-center text-[#647067]">No bills raised in this range.</td></tr>
+                  <tr><td colSpan={11} className="py-3 text-center text-[#647067]">No bills raised in this range.</td></tr>
                 )}
               </tbody>
               <tfoot>
@@ -110,6 +118,7 @@ export default async function TransactionsPrintPage({ searchParams }: { searchPa
                   <td className="py-1.5 text-right tabular">{money(sales.totals.tax)}</td>
                   <td className="py-1.5 text-right tabular">{money(sales.totals.net)}</td>
                   <td className="py-1.5 text-right tabular">{money(sales.totals.collected)}</td>
+                  <td className="py-1.5 text-right tabular">{money(sales.totals.settledLater)}</td>
                   <td className="py-1.5 pr-1 text-right tabular">{money(sales.totals.due)}</td>
                 </tr>
               </tfoot>

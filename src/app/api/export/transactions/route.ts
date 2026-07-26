@@ -44,13 +44,16 @@ export async function GET(req: NextRequest) {
   lines.push("");
 
   // Main table — one row per bill RAISED in this range (sale recorded on the
-  // billing day whether or not collected). Collected/Due are as of this period.
+  // billing day whether or not collected). "Collected" is this period's own
+  // takings; a due settled afterwards shows under "Settled Later", and
+  // "Due (Now)" is what is still outstanding today — so re-exporting an old day
+  // shows no due once the patient has paid up.
   lines.push(csvRow(["Sales (Bills Raised This Period)"]));
-  lines.push(csvRow(["Visit", "Bill", "Date", "Patient", "Referred By", "Gross Sales", "Discount", "Tax", "Net Sales", "Collected", "Due"]));
+  lines.push(csvRow(["Visit", "Bill", "Date", "Patient", "Referred By", "Gross Sales", "Discount", "Tax", "Net Sales", "Collected", "Settled Later", "Due (Now)"]));
   for (const r of sales.rows) {
-    lines.push(csvRow([r.visitCode, r.billCode, fmtDateTime(r.createdAt), r.patientName, r.referredBy ?? "Walk-in", r.subtotal.toFixed(2), r.discount.toFixed(2), r.tax.toFixed(2), r.grandTotal.toFixed(2), r.collected.toFixed(2), r.due.toFixed(2)]));
+    lines.push(csvRow([r.visitCode, r.billCode, fmtDateTime(r.createdAt), r.patientName, r.referredBy ?? "Walk-in", r.subtotal.toFixed(2), r.discount.toFixed(2), r.tax.toFixed(2), r.grandTotal.toFixed(2), r.collected.toFixed(2), r.settledLater.toFixed(2), r.due.toFixed(2)]));
   }
-  lines.push(csvRow(["", "", "", "", "Totals", sales.totals.gross.toFixed(2), sales.totals.discount.toFixed(2), sales.totals.tax.toFixed(2), sales.totals.net.toFixed(2), sales.totals.collected.toFixed(2), sales.totals.due.toFixed(2)]));
+  lines.push(csvRow(["", "", "", "", "Totals", sales.totals.gross.toFixed(2), sales.totals.discount.toFixed(2), sales.totals.tax.toFixed(2), sales.totals.net.toFixed(2), sales.totals.collected.toFixed(2), sales.totals.settledLater.toFixed(2), sales.totals.due.toFixed(2)]));
   lines.push("");
 
   // Dues collected today against bills raised on an earlier day (by payment date).

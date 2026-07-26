@@ -98,10 +98,16 @@ export async function listTransactions(labId: string, opts: { from?: string; to?
  * be invisible on a payment-driven list — which is why the day's sales must come
  * from here. Cancelled bills are excluded.
  *
- * `collected` is what was received against the bill WITHIN this period, and
- * `due` the balance outstanding as of the period's end. A bill raised in the
- * period has no payments before it, so anything collected later shows up in a
- * later day's "previous days' dues" table instead — the two never double-count.
+ * `collected` is what was received against the bill WITHIN this period — the
+ * day's own takings, so cash reconciliation for that day never moves.
+ * `settledLater` is what came in against the same bill AFTER the period (a due
+ * cleared on a later day), and `due` is what is STILL outstanding today
+ * (`bills.dueAmount`, kept current by `recomputeBill`). So re-exporting the day
+ * a bill was raised shows no due once the patient has settled it, while the
+ * money itself still belongs to the day it was actually collected — it appears
+ * in that later day's "previous days' dues" table, never double-counted here.
+ *
+ * Barring refunds, Collected + Settled later + Due = Net sales for every row.
  */
 export async function getSalesInRange(labId: string, from?: string, to?: string) {
   const { s, e, start, end } = dayRange(from, to);
@@ -116,6 +122,19 @@ export async function getSalesInRange(labId: string, from?: string, to?: string)
     .groupBy(payments.billId)
     .as("paid_in_range");
 
+  // …and what came in against it after this period closed. A bill raised in the
+  // range has no payments before it, so in-range + after-range is everything
+  // ever collected on it.
+  const paidAfterRange = db
+    .select({
+      billId: payments.billId,
+      collectedAfter: sql<number>`coalesce(sum(case when ${payments.kind} = 'refund' then -${payments.amount} else ${payments.amount} end),0)`.as("collected_after"),
+    })
+    .from(payments)
+    .where(sql`${payments.paidAt} > ${e}`)
+    .groupBy(payments.billId)
+    .as("paid_after_range");
+
   const rows = await db
     .select({
       billCode: bills.code,
@@ -129,24 +148,27 @@ export async function getSalesInRange(labId: string, from?: string, to?: string)
       tax: bills.taxAmount,
       grandTotal: bills.grandTotal,
       collected: sql<number>`coalesce(${paidInRange.collected}, 0)`,
+      settledLater: sql<number>`coalesce(${paidAfterRange.collectedAfter}, 0)`,
+      // Live outstanding — not "grand total minus what this period collected",
+      // so a due cleared on a later day reads as settled here too.
+      dueNow: bills.dueAmount,
     })
     .from(bills)
     .innerJoin(visits, eq(bills.visitId, visits.id))
     .innerJoin(patients, eq(bills.patientId, patients.id))
     .leftJoin(paidInRange, eq(paidInRange.billId, bills.id))
+    .leftJoin(paidAfterRange, eq(paidAfterRange.billId, bills.id))
     .where(and(eq(bills.labId, labId), eq(bills.status, "active"), gte(bills.createdAt, start), lte(bills.createdAt, end)))
     .orderBy(desc(bills.createdAt))
     .limit(2000);
 
-  const shaped = rows.map(({ visitReferredBy, patientReferredBy, collected, ...r }) => {
-    const collectedNum = Number(collected);
-    return {
-      ...r,
-      referredBy: visitReferredBy ?? patientReferredBy ?? null,
-      collected: collectedNum,
-      due: r.grandTotal - collectedNum,
-    };
-  });
+  const shaped = rows.map(({ visitReferredBy, patientReferredBy, collected, settledLater, dueNow, ...r }) => ({
+    ...r,
+    referredBy: visitReferredBy ?? patientReferredBy ?? null,
+    collected: Number(collected),
+    settledLater: Number(settledLater),
+    due: Math.max(0, Number(dueNow ?? 0)),
+  }));
   const totals = shaped.reduce(
     (t, r) => ({
       gross: t.gross + r.subtotal,
@@ -154,9 +176,10 @@ export async function getSalesInRange(labId: string, from?: string, to?: string)
       tax: t.tax + r.tax,
       net: t.net + r.grandTotal,
       collected: t.collected + r.collected,
+      settledLater: t.settledLater + r.settledLater,
       due: t.due + r.due,
     }),
-    { gross: 0, discount: 0, tax: 0, net: 0, collected: 0, due: 0 },
+    { gross: 0, discount: 0, tax: 0, net: 0, collected: 0, settledLater: 0, due: 0 },
   );
   return { rows: shaped, totals };
 }
