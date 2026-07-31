@@ -70,7 +70,9 @@ export default async function SampleCollectionPage({ searchParams }: { searchPar
                   <TD>{s.sampleTypeName}</TD>
                   <TD>
                     {/* The collector needs to know what this tube is being drawn
-                        for, not just how many tests there are. */}
+                        for, not just how many tests there are. Profiles show as
+                        the billed group (CBC) rather than their analytes; the
+                        count underneath still reports individual tests. */}
                     <div className="max-w-[340px]">
                       {s.testNames ? (
                         <div className="flex flex-wrap gap-1">

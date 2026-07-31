@@ -81,6 +81,31 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-07-31 — Sample Collection "Tests" column shows the billed profile
+- **The ask.** A patient billed for CBC showed up on Sample Collection as a wall of
+  analyte chips (DC, Neutrophils, Lymphocytes, Hemoglobin…). The collector cares what the
+  tube is *for*, so a profile should read as one chip: **CBC**.
+- **`listSamples` (`src/lib/queries/samples.ts`) — the `testNames` subquery only.** It now
+  selects `distinct coalesce(visit_tests.group_name, visit_tests.test_name) as label`
+  and orders/group_concats on `label`, instead of concatenating raw `test_name`s. Tests
+  ordered as part of a profile collapse into their single `group_name`; standalone tests
+  (no `group_id`, so `group_name` is null) still print their own name. Same
+  `coalesce(group, test)` convention `getTopTests` (`dashboard.ts`) and the report's
+  profile sections already use, reading the `visit_tests.group_name` snapshot — no schema
+  change, no new join, no migration.
+- **Deliberately unchanged:** the `sample_type_id` + `status <> 'cancelled'` filters (a
+  cancelled analyte still never shows, and a profile spanning two tubes still names itself
+  on both — correct, each tube is genuinely drawn for part of it); `testCount`, which
+  still counts **individual tests**, so a row can read "CBC" over "5 tests" on purpose;
+  the ordered-subquery trick (SQLite's `group_concat` has no ordering of its own); and
+  the page's chip rendering, which still splits on `", "`.
+- **Files:** `src/lib/queries/samples.ts` (query), `src/app/(app)/sample-collection/page.tsx`
+  (comment only — no JSX change).
+- **Verified:** `npx tsc --noEmit` and `npm run lint` clean; SQL exercised against a
+  throwaway in-memory SQLite table (never the configured DATABASE_URL — `local.db` is
+  empty here): a visit with 3 CBC analytes + a cancelled 4th + standalone ESR on EDTA and
+  LFT + Sugar (F) on serum renders `CBC, ESR` (n=4) and `LFT, Sugar (F)` (n=2).
+
 ### 2026-07-26 — Transactions export: dues cleared later read as settled
 - **The problem.** `getSalesInRange` computed `due = grandTotal − collected-in-range`, so
   re-exporting the day a bill was raised kept showing the old due even after the patient

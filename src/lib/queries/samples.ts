@@ -35,15 +35,19 @@ export async function listSamples(labId: string, opts: { q?: string; status?: st
           and visit_tests.sample_type_id = ${samples.sampleTypeId}
           and visit_tests.status <> 'cancelled'
       )`,
-      // Ordered inside a subquery: SQLite's group_concat has no guaranteed
-      // ordering of its own, and an unstable test list would be jarring.
+      // Billed profiles read as the profile ("CBC"), not as their member
+      // analytes ("DC, Neutrophils…") — same coalesce(group, test) convention
+      // the dashboard and reports use. Distinct collapses a group's members
+      // into one chip. Ordered inside a subquery: SQLite's group_concat has no
+      // guaranteed ordering of its own, and an unstable list would be jarring.
       testNames: sql<string | null>`(
-        select group_concat(test_name, ', ') from (
-          select visit_tests.test_name from visit_tests
+        select group_concat(label, ', ') from (
+          select distinct coalesce(visit_tests.group_name, visit_tests.test_name) as label
+          from visit_tests
           where visit_tests.visit_id = ${samples.visitId}
             and visit_tests.sample_type_id = ${samples.sampleTypeId}
             and visit_tests.status <> 'cancelled'
-          order by visit_tests.test_name
+          order by label
         )
       )`,
     })
