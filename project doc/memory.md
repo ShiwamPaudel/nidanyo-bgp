@@ -81,6 +81,30 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-08-05 — Public link state is DERIVED, not read from `is_active`
+- **The bug.** Progressive release (below) only fired on an approval or a payment
+  recompute. A visit that was already approved-and-paid before that shipped — e.g.
+  **V-000522**, 2 of 3 tests approved, dues cleared — had no event left to fire, so its
+  `report_links.is_active` stayed 0 and the QR/link answered *"Your report is being
+  processed"* forever. Every visit in that state was stranded.
+- **`resolvePublicReport` (`src/lib/queries/public-report.ts`)** now derives the decision
+  from the data — **≥1 approved test + due cleared** — instead of trusting the stored flag,
+  and flips `is_active` to catch up (**silently — a page view never sends an SMS**;
+  notification stays with the approval flow). `is_active` still short-circuits to "ready"
+  when set, so nothing that was working stops working.
+- **Staff screens derive the same rule** so they don't say "Inactive" while the patient's
+  QR already works: `listReports` (`queries/dispatch.ts`) adds a `hasApprovedTest` exists-
+  subquery and ORs it into `linkActive` (guarded on due ≤ 0, bill `active`, visit not
+  cancelled); the visit-detail Report card uses the same `linkLive` expression.
+- **Still blocked, verified:** outstanding due → "payment pending" and the flag is *not*
+  flipped; nothing approved → "processing"; cancelled bill → never released (its message
+  stays the pre-existing "payment pending" — a cancelled bill is never "due cleared").
+- **Known consequence of deriving:** admin **reopen** deactivates the link, but if the
+  visit still has other approved tests and no due, the next view re-derives it as live and
+  shows those remaining tests (the reopened one is gone from the report, since it is no
+  longer approved). Consistent with progressive release; call it out if the lab expects
+  reopen to take the whole report offline.
+
 ### 2026-08-05 — Progressive report release (QR shows the approved tests already)
 - **The ask.** Some tests finish in minutes, others take days. A patient scanning the
   QR on their bill saw "Your report is being processed" until the *last* test was

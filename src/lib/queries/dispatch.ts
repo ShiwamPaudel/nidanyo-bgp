@@ -42,7 +42,12 @@ export async function listReports(labId: string, opts: { q?: string; status?: st
       patientPhone: patients.phone,
       patientEmail: patients.email,
       dueAmount: bills.dueAmount,
+      billStatus: bills.status,
       linkActive: reportLinks.isActive,
+      // Same rule the public page derives from, so this column tells the truth
+      // for a visit that became eligible without an approval/payment event to
+      // flip the stored flag (the flag catches up on the first patient view).
+      hasApprovedTest: sql<number>`exists (select 1 from result_entries re where re.visit_id = ${visits.id} and re.status in ('approved','dispatched'))`,
       token: reportLinks.token,
       viewCount: reportLinks.viewCount,
       updatedAt: visits.updatedAt,
@@ -57,5 +62,10 @@ export async function listReports(labId: string, opts: { q?: string; status?: st
     .orderBy(desc(visits.updatedAt))
     .limit(200);
 
-  return rows.map((r) => ({ ...r, smsCount: Number(r.smsCount), dispatchCount: Number(r.dispatchCount) }));
+  return rows.map(({ billStatus, hasApprovedTest, ...r }) => ({
+    ...r,
+    linkActive: r.linkActive || (Number(hasApprovedTest) > 0 && (r.dueAmount ?? 0) <= 0 && billStatus === "active" && r.status !== "cancelled"),
+    smsCount: Number(r.smsCount),
+    dispatchCount: Number(r.dispatchCount),
+  }));
 }

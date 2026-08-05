@@ -39,7 +39,13 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
   const publicUrl = reportLink ? await reportUrl(reportLink.token, user.labId) : null;
   // How far along the visit is — the report link is released as soon as the
   // first test is approved, so the card must say what the patient can see.
+  // Derived the same way the public page derives it, so a visit that became
+  // eligible without an approval/payment event to flip the stored flag isn't
+  // reported here as "not shared" while the patient's QR already works.
   const progress = await getApprovalProgress(id);
+  const linkLive =
+    !!reportLink?.isActive ||
+    (progress.hasApproved && !cancelled && !!bill && bill.status === "active" && bill.dueAmount <= 0);
   // Only offer the range sync when this visit actually has values missing a
   // range the catalog can now fill — otherwise the button never appears.
   const syncableRanges = hasPermission(user, PERMISSIONS.APPROVAL_ACT) && !cancelled ? await countSyncableRanges(user.labId, id) : 0;
@@ -211,7 +217,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
           <Card>
             <CardHeader><CardTitle>Report</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {reportLink?.isActive ? (
+              {linkLive ? (
                 <>
                   <div className="flex items-center gap-2 text-sm text-brand-700">
                     <CheckCircle2 className="size-4" />

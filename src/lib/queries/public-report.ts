@@ -22,17 +22,29 @@ export async function resolvePublicReport(token: string): Promise<PublicReportSt
   const link = (await db.select().from(reportLinks).where(eq(reportLinks.token, token))).at(0);
   if (!link) return { status: "invalid" };
 
-  if (link.isActive) {
-    // The link may have been released with only some tests approved (slow tests
-    // like cultures take days) — `getReportData` returns whatever is approved
-    // right now, and `progress` tells the page what is still to come.
-    const [data, progress] = await Promise.all([getReportData(link.labId, link.visitId), getApprovalProgress(link.visitId)]);
+  // What the patient may see is DERIVED here, not read from the stored
+  // `is_active` flag alone: at least one approved test + no outstanding due.
+  // Trusting the flag on its own stranded every visit that already met the
+  // conditions before its last approval/payment event — approved and paid, but
+  // nothing left to fire the activation, so the link answered "being processed"
+  // forever. Deriving it also means the page follows the results by itself: it
+  // shows whatever is approved at the moment it is opened (slow tests like
+  // cultures simply appear later), with `progress` describing what is to come.
+  const [progress, cleared] = await Promise.all([getApprovalProgress(link.visitId), isDueCleared(link.visitId)]);
+
+  if (link.isActive || (progress.hasApproved && cleared)) {
+    const data = await getReportData(link.labId, link.visitId);
     if (!data || data.entries.length === 0) return { status: "processing", linkId: link.id, labId: link.labId };
+    // Catch the stored flag up, so Reports/Dispatch and the visit screen agree
+    // with what the patient is being shown. Deliberately silent — no SMS is
+    // sent from a page view; notification stays with the approval flow.
+    if (!link.isActive) {
+      await db.update(reportLinks).set({ isActive: true }).where(eq(reportLinks.id, link.id));
+    }
     return { status: "ready", data, progress, linkId: link.id, labId: link.labId };
   }
 
-  // Not active — explain why in patient-friendly terms.
-  const [progress, cleared] = await Promise.all([getApprovalProgress(link.visitId), isDueCleared(link.visitId)]);
+  // Not releasable — explain why in patient-friendly terms.
   if (progress.hasApproved && !cleared) return { status: "payment_pending", linkId: link.id, labId: link.labId };
   return { status: "processing", linkId: link.id, labId: link.labId };
 }
