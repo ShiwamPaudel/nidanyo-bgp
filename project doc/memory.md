@@ -107,8 +107,9 @@ Keep this file up to date whenever you make a meaningful change.
 - **`public-report.ts`** — `ready` state now carries `progress`; the inactive-link
   explanation uses `hasApproved && !cleared` → "payment pending" (so a partly-done visit
   with a due says *payment*, not *processing*).
-- **`/r/[token]`** — amber on-screen banner "X of Y tests are ready… <names> still in
-  progress" plus a printed **"Interim report"** note above the end-of-report line (new
+- **`/r/[token]`** — amber on-screen banner "Your report is partly ready — X of Y tests
+  done. Still in the laboratory: <names>…" plus a printed **"Interim report"** note above
+  the end-of-report line (new
   optional `pendingNote` prop on `ReportSheet`/`ReportBody`, passed **only** by the public
   page — in-lab prints are byte-identical).
 - **Visit detail** "Report" card reads "Shared — X of Y tests visible" while partial.

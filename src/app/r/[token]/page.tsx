@@ -57,9 +57,9 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
           <div className="mx-auto flex max-w-[210mm] items-start gap-2 px-4 py-2.5 text-xs text-amber-900">
             <Hourglass className="mt-px size-4 shrink-0" />
             <p>
-              <span className="font-semibold">{approved} of {total} tests are ready.</span>{" "}
-              {pendingLabel} {pendingTests.length === 1 ? "is" : "are"} still in progress — open this same link (or scan the QR again) later to see them.
-              You will receive a message once the full report is ready.
+              <span className="font-semibold">Your report is partly ready — {approved} of {total} tests done.</span>{" "}
+              Still in the laboratory: {pendingLabel}. Open this same link (or scan the QR again) later to see the rest;
+              you will receive a message once the full report is ready.
             </p>
           </div>
         </div>
