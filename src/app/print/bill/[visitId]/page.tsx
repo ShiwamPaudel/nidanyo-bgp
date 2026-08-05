@@ -37,7 +37,12 @@ export default async function BillPrintPage({ params }: { params: Promise<{ visi
     panVat: settings?.panVat,
   };
 
-  const statusLine = bill.dueAmount > 0 ? "Payment pending — report available after full payment & approval." : "Paid — report will be available after approval.";
+  // Tests are released to the link one by one as they are approved, so a paid
+  // bill can already show the quick tests while the slower ones are running.
+  const statusLine =
+    bill.dueAmount > 0
+      ? "Payment pending — report available after full payment & approval."
+      : "Paid — each test appears on this link as soon as it is approved.";
 
   return (
     <div className="min-h-screen bg-[#eef1ee] print-root">

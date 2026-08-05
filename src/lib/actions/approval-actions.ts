@@ -48,17 +48,20 @@ export async function approveVisit(input: { visitId: string; interpretation?: st
       });
     }
 
-    // If every result entry on the visit is now approved, mark visit + try release.
+    // If every result entry on the visit is now approved, mark the visit approved.
     const remaining = await db
       .select({ id: resultEntries.id })
       .from(resultEntries)
       .where(and(eq(resultEntries.visitId, input.visitId), inArray(resultEntries.status, ["pending", "draft", "submitted", "correction_required"] as never)));
 
-    let released = false;
     if (remaining.length === 0) {
       await db.update(visits).set({ status: "approved" }).where(eq(visits.id, input.visitId));
-      released = await activateReportLinkIfReady(input.visitId);
     }
+    // Try the release on EVERY approval, not just the last one: with the bill
+    // cleared, the tests approved now go live on the patient's QR link straight
+    // away, and the link picks up the slower tests as they follow. The SMS is
+    // still only sent when the last test is approved (see report-engine).
+    const released = await activateReportLinkIfReady(input.visitId);
 
     await audit(user, "result.approve", { entity: "visit", entityId: input.visitId, summary: `Approved results for ${visit.code}` });
     await activity(user, "result_approved", `Approved results for ${visit.code}`, { entity: "visit", entityId: input.visitId });
@@ -69,7 +72,9 @@ export async function approveVisit(input: { visitId: string; interpretation?: st
 
     const bill = (await db.select().from(bills).where(eq(bills.visitId, input.visitId))).at(0);
     const message = released
-      ? "Approved — report released and SMS sent"
+      ? remaining.length === 0
+        ? "Approved — report released and SMS sent"
+        : `Approved — these tests are live on the patient's report link (${remaining.length} still pending)`
       : bill && bill.dueAmount > 0
         ? "Approved — report will release once payment is cleared"
         : "Results approved";
@@ -120,8 +125,11 @@ export async function reopenApprovedResults(input: { visitId: string; entryIds: 
     }
 
     // The report is no longer valid — pull the visit back and deactivate its link.
+    // `activatedAt` is cleared too: it is the "report-ready message already sent"
+    // marker, so clearing it means the patient is notified again once the
+    // corrected results are re-approved (the behaviour before partial release).
     await db.update(visits).set({ status: "result_pending" }).where(eq(visits.id, input.visitId));
-    await db.update(reportLinks).set({ isActive: false }).where(eq(reportLinks.visitId, input.visitId));
+    await db.update(reportLinks).set({ isActive: false, activatedAt: null }).where(eq(reportLinks.visitId, input.visitId));
 
     await audit(user, "result.reopen_approved", { entity: "visit", entityId: input.visitId, summary: `Reopened ${target.length} approved result${target.length === 1 ? "" : "s"} for ${visit.code}: ${reason}` });
     await activity(user, "result_reopened", `Reopened approved results for ${visit.code}`, { entity: "visit", entityId: input.visitId });

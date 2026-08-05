@@ -7,7 +7,7 @@ import { getVisitDetail } from "@/lib/queries/billing";
 import { countSyncableRanges, getGroupDrift } from "@/lib/queries/results";
 import { getPaymentModes } from "@/lib/queries/catalog";
 import { getLab } from "@/lib/queries/lab";
-import { reportUrl } from "@/lib/report-engine";
+import { reportUrl, getApprovalProgress } from "@/lib/report-engine";
 import { PageHeader } from "@/components/ui/page";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
@@ -37,6 +37,9 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
   const isAdmin = hasPermission(user, PERMISSIONS.SETTINGS_MANAGE);
   const hasApprovedTests = visitTests.some((t) => t.status === "approved");
   const publicUrl = reportLink ? await reportUrl(reportLink.token, user.labId) : null;
+  // How far along the visit is — the report link is released as soon as the
+  // first test is approved, so the card must say what the patient can see.
+  const progress = await getApprovalProgress(id);
   // Only offer the range sync when this visit actually has values missing a
   // range the catalog can now fill — otherwise the button never appears.
   const syncableRanges = hasPermission(user, PERMISSIONS.APPROVAL_ACT) && !cancelled ? await countSyncableRanges(user.labId, id) : 0;
@@ -211,8 +214,16 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
               {reportLink?.isActive ? (
                 <>
                   <div className="flex items-center gap-2 text-sm text-brand-700">
-                    <CheckCircle2 className="size-4" /> <span className="font-medium">Report is ready & shared</span>
+                    <CheckCircle2 className="size-4" />
+                    <span className="font-medium">
+                      {progress.pending > 0 ? `Shared — ${progress.approved} of ${progress.total} tests visible` : "Report is ready & shared"}
+                    </span>
                   </div>
+                  {progress.pending > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      The remaining {progress.pending} test{progress.pending === 1 ? "" : "s"} will appear on the same link once approved.
+                    </p>
+                  )}
                   {publicUrl && (
                     <a href={publicUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 break-all text-xs text-info hover:underline">
                       <Link2 className="size-3.5 shrink-0" /> {publicUrl}

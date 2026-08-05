@@ -2,14 +2,19 @@ import "server-only";
 import { db } from "@/db/client";
 import { reportLinks, reportAccessLogs } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { isVisitFullyApproved, isDueCleared } from "@/lib/report-engine";
+import { getApprovalProgress, isDueCleared, type ApprovalProgress } from "@/lib/report-engine";
 import { getReportData } from "@/lib/queries/report";
 
 export type PublicReportState =
   | { status: "invalid" }
   | { status: "processing" }
   | { status: "payment_pending" }
-  | { status: "ready"; data: NonNullable<Awaited<ReturnType<typeof getReportData>>> };
+  | {
+      status: "ready";
+      data: NonNullable<Awaited<ReturnType<typeof getReportData>>>;
+      /** How much of the visit is done — `pending > 0` means more tests are still to come. */
+      progress: ApprovalProgress;
+    };
 
 /** Resolve a public token into a safe state. Never exposes internal ids. */
 export async function resolvePublicReport(token: string): Promise<PublicReportState & { linkId?: string; labId?: string }> {
@@ -18,14 +23,17 @@ export async function resolvePublicReport(token: string): Promise<PublicReportSt
   if (!link) return { status: "invalid" };
 
   if (link.isActive) {
-    const data = await getReportData(link.labId, link.visitId);
+    // The link may have been released with only some tests approved (slow tests
+    // like cultures take days) — `getReportData` returns whatever is approved
+    // right now, and `progress` tells the page what is still to come.
+    const [data, progress] = await Promise.all([getReportData(link.labId, link.visitId), getApprovalProgress(link.visitId)]);
     if (!data || data.entries.length === 0) return { status: "processing", linkId: link.id, labId: link.labId };
-    return { status: "ready", data, linkId: link.id, labId: link.labId };
+    return { status: "ready", data, progress, linkId: link.id, labId: link.labId };
   }
 
   // Not active — explain why in patient-friendly terms.
-  const [approved, cleared] = await Promise.all([isVisitFullyApproved(link.visitId), isDueCleared(link.visitId)]);
-  if (approved && !cleared) return { status: "payment_pending", linkId: link.id, labId: link.labId };
+  const [progress, cleared] = await Promise.all([getApprovalProgress(link.visitId), isDueCleared(link.visitId)]);
+  if (progress.hasApproved && !cleared) return { status: "payment_pending", linkId: link.id, labId: link.labId };
   return { status: "processing", linkId: link.id, labId: link.labId };
 }
 

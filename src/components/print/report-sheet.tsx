@@ -69,6 +69,12 @@ export interface ReportSheetProps {
   qrDataUrl?: string;
   publicUrl?: string | null;
   watermark?: string;
+  /**
+   * Shown just above the end-of-report line when the visit still has tests in
+   * progress, so a partial report can never be mistaken for the final one.
+   * Only the patient's public page passes it — in-lab prints are unaffected.
+   */
+  pendingNote?: string | null;
 }
 
 /** A4 final report. Header/footer come from uploaded assets; nothing is hard-coded. */
@@ -89,6 +95,7 @@ export function ReportSheet({
   qrDataUrl,
   publicUrl,
   watermark,
+  pendingNote,
 }: ReportSheetProps) {
   return (
     <div className="a4-sheet relative shadow-card print-sheet" style={{ padding: 0 }}>
@@ -132,7 +139,7 @@ export function ReportSheet({
         <tbody>
           <tr>
             <td style={{ padding: `3mm ${marginXMm}mm` }}>
-              <ReportBody cal={cal} patient={patient} visit={visit} entries={entries} signatories={signatories} qrDataUrl={qrDataUrl} publicUrl={publicUrl} />
+              <ReportBody cal={cal} patient={patient} visit={visit} entries={entries} signatories={signatories} qrDataUrl={qrDataUrl} publicUrl={publicUrl} pendingNote={pendingNote} />
             </td>
           </tr>
         </tbody>
@@ -141,7 +148,7 @@ export function ReportSheet({
   );
 }
 
-export type ReportBodyProps = Pick<ReportSheetProps, "cal" | "patient" | "visit" | "entries" | "qrDataUrl" | "publicUrl"> & {
+export type ReportBodyProps = Pick<ReportSheetProps, "cal" | "patient" | "visit" | "entries" | "qrDataUrl" | "publicUrl" | "pendingNote"> & {
   signatories?: ReportSignatory[];
 };
 
@@ -150,7 +157,7 @@ export type ReportBodyProps = Pick<ReportSheetProps, "cal" | "patient" | "visit"
  * and footer). Shared by the table-based ReportSheet and the paged.js print
  * view so both render identical content.
  */
-export function ReportBody({ cal, patient, visit, entries, signatories = [], qrDataUrl, publicUrl }: ReportBodyProps) {
+export function ReportBody({ cal, patient, visit, entries, signatories = [], qrDataUrl, publicUrl, pendingNote }: ReportBodyProps) {
   // Group entries by department for clean sectioning.
   const byDept = new Map<string, ReportEntry[]>();
   for (const e of entries) {
@@ -283,6 +290,14 @@ export function ReportBody({ cal, patient, visit, entries, signatories = [], qrD
           {interpretations.map((i, idx) => (
             <p key={idx} className="mb-0.5"><span className="font-medium">{i.test}: </span>{i.text}</p>
           ))}
+        </div>
+      )}
+
+      {/* Partial report — some tests on this visit are still in the lab. */}
+      {pendingNote && (
+        <div className="mt-4 break-inside-avoid rounded border border-amber-300 bg-amber-50 p-2 text-[10.5px] text-[#7a4b00]">
+          <span className="font-semibold">Interim report · </span>
+          {pendingNote}
         </div>
       )}
 

@@ -22,7 +22,7 @@ export const testSchema = z.object({
   price: z.coerce.number().min(0, "Price cannot be negative"),
   method: z.string().trim().optional().nullable(),
   unit: z.string().trim().optional().nullable(),
-  description: z.string().trim().max(600).optional().nullable(),
+  description: z.string().trim().max(5000).optional().nullable(),
   resultType: z.enum(["numeric", "text", "select", "pos_neg", "multi"]).default("numeric"),
   refLow: numOpt,
   refHigh: numOpt,

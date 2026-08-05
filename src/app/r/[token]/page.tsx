@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { Clock, CreditCard, Unlink, ShieldCheck } from "lucide-react";
+import { Clock, CreditCard, Unlink, ShieldCheck, Hourglass } from "lucide-react";
 import { resolvePublicReport, logReportAccess } from "@/lib/queries/public-report";
 import { reportUrl } from "@/lib/report-engine";
 import { qrDataUrl } from "@/lib/qr";
@@ -29,11 +29,20 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
     return <StatusScreen icon={CreditCard} tone="warning" title="Payment is pending" message="Your report is ready but a payment is still due. Please contact the laboratory to clear the balance and unlock your report." />;
   }
 
-  // Ready
+  // Ready — note this can be an interim report: the link is released as soon as
+  // the first test is approved, so tests that take days (cultures, biopsies)
+  // appear here later on the very same link/QR.
   const data = state.data;
   if (state.linkId) await logReportAccess(state.linkId, "view", { ip, userAgent: ua });
   const publicUrl = data.link ? await reportUrl(data.link.token, data.lab?.id) : null;
   const qr = publicUrl ? await qrDataUrl(publicUrl, 120) : "";
+
+  const { approved, total, pending, pendingTests } = state.progress;
+  const isPartial = pending > 0;
+  const pendingLabel = pendingTests.slice(0, 6).join(", ") + (pendingTests.length > 6 ? ` and ${pendingTests.length - 6} more` : "");
+  const pendingNote = isPartial
+    ? `Showing ${approved} of ${total} tests from this visit. Still in the laboratory: ${pendingLabel}. They will appear on this same link once completed and approved.`
+    : null;
 
   return (
     <div className="min-h-screen bg-[#eef1ee]">
@@ -43,6 +52,18 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
           <span className="flex items-center gap-1.5 text-xs font-medium text-brand-700"><ShieldCheck className="size-4" /> Verified report</span>
         </div>
       </div>
+      {isPartial && (
+        <div className="no-print border-b border-amber-200 bg-amber-50">
+          <div className="mx-auto flex max-w-[210mm] items-start gap-2 px-4 py-2.5 text-xs text-amber-900">
+            <Hourglass className="mt-px size-4 shrink-0" />
+            <p>
+              <span className="font-semibold">{approved} of {total} tests are ready.</span>{" "}
+              {pendingLabel} {pendingTests.length === 1 ? "is" : "are"} still in progress — open this same link (or scan the QR again) later to see them.
+              You will receive a message once the full report is ready.
+            </p>
+          </div>
+        </div>
+      )}
       <PrintToolbar />
       <div className="py-6">
         <ReportSheet
@@ -58,6 +79,7 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
           signatories={data.signatories}
           qrDataUrl={qr}
           publicUrl={publicUrl}
+          pendingNote={pendingNote}
           cal={(data.settings?.calendarSystem as "AD" | "BS") ?? "AD"}
         />
       </div>

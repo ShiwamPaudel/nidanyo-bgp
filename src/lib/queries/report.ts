@@ -19,7 +19,8 @@ import { getLab, getLabAsset } from "@/lib/queries/lab";
 import { compareEntries, type OrderableEntry } from "@/lib/report-order";
 
 /**
- * Full data needed to render a final report (approved results only).
+ * Full data needed to render a final report (approved results only — a visit
+ * whose other tests are still in progress simply reports the approved ones).
  *
  * `entryIds`, when given, restricts the report to that subset of approved
  * entries — used to print just one or two completed tests from a visit whose
@@ -31,7 +32,11 @@ export async function getReportData(labId: string, visitId: string, onlyEntryIds
   const patient = (await db.select().from(patients).where(eq(patients.id, visit.patientId))).at(0);
   const bill = (await db.select().from(bills).where(eq(bills.visitId, visitId))).at(0);
 
-  const entryConds = [eq(resultEntries.visitId, visitId), eq(resultEntries.status, "approved")];
+  // "dispatched" is an approved entry that has since been handed over (the
+  // dispatch action flips the status), so it still belongs on the report —
+  // otherwise a reprint, and the patient's QR link, would come back empty once
+  // the lab records the handover.
+  const entryConds = [eq(resultEntries.visitId, visitId), inArray(resultEntries.status, ["approved", "dispatched"] as never)];
   if (onlyEntryIds && onlyEntryIds.length > 0) entryConds.push(inArray(resultEntries.id, onlyEntryIds));
   const entries = await db
     .select()

@@ -81,6 +81,48 @@ Keep this file up to date whenever you make a meaningful change.
 
 ## Change log (most recent first)
 
+### 2026-08-05 — Progressive report release (QR shows the approved tests already)
+- **The ask.** Some tests finish in minutes, others take days. A patient scanning the
+  QR on their bill saw "Your report is being processed" until the *last* test was
+  approved. Now the link shows whatever is already approved and fills in later.
+- **`src/lib/report-engine.ts`**
+  - New **`getApprovalProgress(visitId)`** → `{ total, approved, pending, pendingTests,
+    hasApproved, isComplete }`. Counts the visit's reportable result entries (billing-only
+    departments still excluded, `dispatched` counts as done). `isVisitFullyApproved` is now
+    a one-line wrapper over `isComplete` (single source of truth). Side effect of counting
+    dispatched as done: an already-handed-over visit whose due is cleared *afterwards* now
+    activates its link (and sends the SMS) — it used to stay dark forever.
+  - **`activateReportLinkIfReady`** releases the link when **≥1 test is approved AND the
+    due is cleared** (was: *all* tests approved). Due-clearing rule is unchanged.
+    `reportLinks.activatedAt` is no longer written on that first release — it now marks
+    the **final** release and doubles as the "report-ready message already sent" flag, so
+    the visit→`approved` status update and the SMS/email still fire **once, only when the
+    last test is approved**. No schema change.
+- **`approval-actions.ts`** — `approveVisit` calls `activateReportLinkIfReady` on *every*
+  approval (it self-gates), not only when nothing remains; visit status still flips only
+  when nothing remains. Toast for a partial release: "Approved — these tests are live on
+  the patient's report link (N still pending)". `reopenApprovedResults` also clears
+  `activatedAt` alongside `isActive:false`, so a corrected report notifies the patient
+  again on re-approval (the behaviour before this change).
+- **`public-report.ts`** — `ready` state now carries `progress`; the inactive-link
+  explanation uses `hasApproved && !cleared` → "payment pending" (so a partly-done visit
+  with a due says *payment*, not *processing*).
+- **`/r/[token]`** — amber on-screen banner "X of Y tests are ready… <names> still in
+  progress" plus a printed **"Interim report"** note above the end-of-report line (new
+  optional `pendingNote` prop on `ReportSheet`/`ReportBody`, passed **only** by the public
+  page — in-lab prints are byte-identical).
+- **Visit detail** "Report" card reads "Shared — X of Y tests visible" while partial.
+  **Bill print** paid-status line now reads "each test appears on this link as soon as it
+  is approved".
+- **Bug fixed along the way (needed for the above):** `getReportData` filtered entries on
+  `status = 'approved'` only, but `markDispatched` flips approved entries to
+  `'dispatched'` — so once a report was marked dispatched, `/print/report/[visitId]`
+  404'd and `/r/[token]` fell back to "being processed". It now accepts
+  `['approved','dispatched']`.
+- No migration. Reports/Dispatch queries, due-print restriction, and the print picker are
+  untouched (partially-approved visits already surfaced on Reports via `includePartial`;
+  they now show their link as "Active", which is the point).
+
 ### 2026-07-31 — Sample Collection "Tests" column shows the billed profile
 - **The ask.** A patient billed for CBC showed up on Sample Collection as a wall of
   analyte chips (DC, Neutrophils, Lymphocytes, Hemoglobin…). The collector cares what the
