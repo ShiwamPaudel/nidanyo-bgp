@@ -9,6 +9,7 @@ import { PERMISSIONS } from "@/lib/rbac/permissions";
 import { ActionResult, ok, fail, run } from "@/lib/action";
 import { audit, activity } from "@/lib/audit";
 import { resendReportSms, sendReportEmail } from "@/lib/report-engine";
+import { SMS_ENABLED, EMAIL_ENABLED } from "@/lib/messaging";
 
 type Channel = "printed" | "collected" | "sms" | "email" | "downloaded";
 
@@ -16,6 +17,11 @@ type Channel = "printed" | "collected" | "sms" | "email" | "downloaded";
 export async function recordDispatch(input: { visitId: string; channel: Channel; note?: string | null }): Promise<ActionResult> {
   return run(async () => {
     const user = await authorize(PERMISSIONS.DISPATCH_ACT);
+    // The UI hides these channels while they are dormant; reject them here too
+    // so a stale page cannot record a delivery that never happened.
+    if (input.channel === "sms" && !SMS_ENABLED) return fail("SMS is not enabled for this laboratory.");
+    if (input.channel === "email" && !EMAIL_ENABLED) return fail("Email is not enabled for this laboratory.");
+
     const visit = (await db.select().from(visits).where(and(eq(visits.id, input.visitId), eq(visits.labId, user.labId)))).at(0);
     if (!visit) return fail("Visit not found.");
     if (visit.status !== "approved" && visit.status !== "dispatched") return fail("This report is not ready for dispatch yet.");

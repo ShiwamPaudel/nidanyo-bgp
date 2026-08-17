@@ -32,5 +32,10 @@ export const patients = sqliteTable(
     labCodeIdx: index("patients_lab_code_idx").on(t.labId, t.code),
     phoneIdx: index("patients_phone_idx").on(t.phone),
     nameIdx: index("patients_name_idx").on(t.fullName),
+    // (lab_id, is_active, created_at) — the patient list is the busiest screen
+    // in the app and is always "active patients, newest first". The lab+code
+    // index above cannot serve that ordering, so every page load sorted the
+    // whole patient table to return 20 rows.
+    labActiveCreatedIdx: index("patients_lab_active_created_idx").on(t.labId, t.isActive, t.createdAt),
   }),
 );

@@ -1,8 +1,11 @@
 import "server-only";
 import { db } from "@/db/client";
-import { visits, patients, bills, reportLinks, reportDispatches, smsLogs } from "@/db/schema";
+import { visits, patients, bills, reportLinks } from "@/db/schema";
 import { and, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
 import { labDayBounds, parseLabYmd } from "@/lib/datetime";
+
+/** Rows returned in one page of the report/dispatch list. */
+export const REPORTS_PAGE_LIMIT = 200;
 
 /**
  * Visits whose reports are approved (ready for / already dispatched).
@@ -11,6 +14,9 @@ import { labDayBounds, parseLabYmd } from "@/lib/datetime";
  * at least one approved test — so the completed tests can be printed and handed
  * over while the rest are still in progress. Used by the Reports page only;
  * Dispatch leaves it off and keeps showing fully-approved visits.
+ *
+ * Returns at most REPORTS_PAGE_LIMIT rows plus a `hasMore` flag; callers must
+ * surface that flag so a truncated list never looks complete.
  */
 export async function listReports(labId: string, opts: { q?: string; status?: string; from?: string; to?: string; includePartial?: boolean } = {}) {
   const term = opts.q?.trim() ? `%${opts.q.trim()}%` : null;
@@ -51,8 +57,10 @@ export async function listReports(labId: string, opts: { q?: string; status?: st
       token: reportLinks.token,
       viewCount: reportLinks.viewCount,
       updatedAt: visits.updatedAt,
-      smsCount: sql<number>`(select count(*) from sms_logs where sms_logs.visit_id = ${visits.id} and sms_logs.status = 'sent')`,
-      dispatchCount: sql<number>`(select count(*) from report_dispatches where report_dispatches.visit_id = ${visits.id})`,
+      // No sms_logs count here any more: SMS is dormant (see lib/messaging.ts),
+      // so the column showed nothing actionable while costing a correlated
+      // scan of sms_logs for every row. The report_dispatches count that used
+      // to sit alongside it was never rendered at all.
     })
     .from(visits)
     .innerJoin(patients, eq(visits.patientId, patients.id))
@@ -60,12 +68,18 @@ export async function listReports(labId: string, opts: { q?: string; status?: st
     .leftJoin(reportLinks, eq(reportLinks.visitId, visits.id))
     .where(and(...conds))
     .orderBy(desc(visits.updatedAt))
-    .limit(200);
+    // One extra row tells us whether more exist, so the page can say so
+    // instead of silently truncating.
+    .limit(REPORTS_PAGE_LIMIT + 1);
 
-  return rows.map(({ billStatus, hasApprovedTest, ...r }) => ({
-    ...r,
-    linkActive: r.linkActive || (Number(hasApprovedTest) > 0 && (r.dueAmount ?? 0) <= 0 && billStatus === "active" && r.status !== "cancelled"),
-    smsCount: Number(r.smsCount),
-    dispatchCount: Number(r.dispatchCount),
-  }));
+  const hasMore = rows.length > REPORTS_PAGE_LIMIT;
+  const page = hasMore ? rows.slice(0, REPORTS_PAGE_LIMIT) : rows;
+
+  return {
+    rows: page.map(({ billStatus, hasApprovedTest, ...r }) => ({
+      ...r,
+      linkActive: r.linkActive || (Number(hasApprovedTest) > 0 && (r.dueAmount ?? 0) <= 0 && billStatus === "active" && r.status !== "cancelled"),
+    })),
+    hasMore,
+  };
 }

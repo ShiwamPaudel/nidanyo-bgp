@@ -327,3 +327,64 @@ Keep this file up to date whenever you make a meaningful change.
    blocked" notice to non-admins), covering all entry points. Soft-gated on the Reports
    list (lock icon instead of print button). Toggle lives in Lab Profile → "Report & link
    settings". **Deploy step: run `npm run db:migrate` (migration 0008).**
+
+### 2026-08-17 — Read-path performance + SMS/Email put dormant
+Performance refactor only; no business logic, statuses, billing or auth behaviour changed.
+
+1. **Indexes (migration `drizzle/0009_right_violations.sql`).** The report/dispatch read
+   path ran `exists (… re.visit_id = v.id and re.status = 'approved')` per visit row, and
+   SQLite served it with `result_entries_status_idx` — which matches ~94% of the table, so
+   each check scanned most of `result_entries` (cost was O(visits × entries)). Added
+   `result_entries(visit_id, status)`; the plan is now a **covering** seek
+   `(visit_id=? AND status=?)`. Also added `result_entries(lab_id, status)` (covering, for
+   the sidebar badge / dashboard counts), `visits(lab_id, status, updated_at)` (dispatch
+   queue — index seek, temp-b-tree sort gone), `visits(lab_id, visit_date)` (billing list,
+   date-bounded reports, peak hours), `patients(lab_id, is_active, created_at)` (patient
+   list — sort gone). Dropped `report_links_token_idx`, a duplicate of the index the
+   `token` unique constraint already creates.
+   ⚠️ **Root cause worth remembering: production had NO `sqlite_stat1` — `ANALYZE` had
+   never been run**, so the planner was working from heuristics. Migration 0009 therefore
+   ends with `ANALYZE;`. Re-run `ANALYZE` after any future bulk import.
+   **Deploy step: apply migration 0009.**
+
+2. **SMS and Email are now dormant** (`src/lib/messaging.ts`). The clinic uses neither.
+   The switch is the *existing* `SMS_PROVIDER` / `EMAIL_PROVIDER` env vars — a channel is
+   live only when it names a real provider; unset/`mock`/`off`/`none`/`disabled` = dormant.
+   No new config system. `sendSms`/`sendEmail` return early: **no provider call and no
+   `sms_logs` / `email_logs` row**. `trySendReportReadySms` bails before its four lookups.
+   Dispatch UI hides the SMS resend button and the SMS/Email dispatch channels, and
+   `recordDispatch` rejects those channels defensively. Settings → SMS/Email keep their
+   history tables (read-only) and now say the channel is off; the test-send widgets are
+   hidden while dormant. **Preserved: both tables, all historical rows, `patients.email`,
+   `patients.phone`, both adapters with their Sparrow/Twilio/Resend/SendGrid branches, the
+   `sms.send` permission, and the `report_dispatches.channel` enum.** To re-enable, set the
+   provider env var — no code change.
+
+3. **`listReports` (`src/lib/queries/dispatch.ts`)** lost the correlated `sms_logs` count
+   (SMS is dormant) and the correlated `report_dispatches` count (**it was never rendered
+   anywhere**). The `hasApprovedTest` EXISTS stays — it drives `linkActive`, and its
+   `('approved','dispatched')` set is deliberately wider than the `includePartial` branch's
+   `'approved'`; both were left exactly as they were. Now returns `{ rows, hasMore }`
+   (fetches limit+1) so a truncated list can no longer look complete.
+
+4. **Round trips.** `getCurrentUser` was 4 sequential queries (session → user → role →
+   lab_settings); all are PK lookups off the session row, so it is now **one join**
+   (`innerJoin users`, `leftJoin roles/labSettings` — left joins preserve the old
+   fallbacks). **212 ms → 52 ms.** `getLab`'s two queries became one `db.batch`:
+   **97 ms → 51 ms.** Together ~206 ms off *every* page. Session/permission data is still
+   read fresh per request — deliberately not cached.
+
+5. **Dispatch bounding.** The "Ready" tab is a live work queue (29 approved visits were
+   already older than 30 days), so it is **deliberately not date-defaulted** — hiding
+   pending work would be worse than the scan. Instead the new
+   `visits(lab_id, status, updated_at)` index makes it a seek. The "Dispatched"/"All" tabs
+   now default to today and carry the same `DateRangeFilter` as Reports; a search still
+   spans all dates. Both Reports and Dispatch show a "showing the first 200" notice.
+
+**Considered and deliberately NOT done:** `sms_logs(visit_id, status)` (the query it would
+optimise is gone); `visits(lab_id, updated_at)` (`updated_at` changes on every visit write
+and the status composite already covers the hot path); UNIQUE on `bills.visit_id` /
+`report_links.visit_id` (0 duplicates and single insert paths confirmed, but it is an
+integrity change with write-rejection risk, not a performance one — worth doing separately);
+FTS5 patient search (search measures at the ~48 ms network floor); keyset pagination
+(offset page 100 costs 6 ms more than page 1).

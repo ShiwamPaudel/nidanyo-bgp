@@ -9,6 +9,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { StatusChip } from "@/components/ui/status-chip";
 import { EmptyState } from "@/components/ui/feedback";
 import { fmtDateTime } from "@/lib/datetime";
+import { SMS_ENABLED } from "@/lib/messaging";
 import { SmsTest } from "./sms-test";
 
 export const metadata = { title: "SMS" };
@@ -17,7 +18,7 @@ export default async function SmsSettingsPage() {
   const me = await requirePermission(PERMISSIONS.SETTINGS_MANAGE);
   const provider = process.env.SMS_PROVIDER || "mock";
   const senderId = process.env.SMS_SENDER_ID || "Nidanyo";
-  const configured = provider !== "mock";
+  const configured = SMS_ENABLED;
   const logs = await db.select().from(smsLogs).where(eq(smsLogs.labId, me.labId)).orderBy(desc(smsLogs.createdAt)).limit(25);
 
   return (
@@ -33,14 +34,14 @@ export default async function SmsSettingsPage() {
           </div>
           {!configured ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              SMS is running in preview mode — messages are logged but not actually delivered. To enable real SMS, set the provider credentials in your environment configuration and restart the app.
+              SMS is turned off. Nothing is sent to patients and no new entries are recorded below. Past messages are kept. To turn it on, set the provider credentials in your environment configuration and restart the app.
             </p>
           ) : (
             <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
               SMS is configured. Patients automatically receive a message when their report is ready and the payment is cleared.
             </p>
           )}
-          <SmsTest />
+          {configured && <SmsTest />}
         </CardContent>
       </Card>
 

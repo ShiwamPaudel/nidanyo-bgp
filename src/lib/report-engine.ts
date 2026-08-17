@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { publicToken } from "@/lib/crypto";
 import { sendSms, reportReadyMessage } from "@/lib/sms";
 import { sendEmail, reportReadyEmail } from "@/lib/email";
+import { SMS_ENABLED, EMAIL_ENABLED, MESSAGING_ENABLED } from "@/lib/messaging";
 
 /** Ensure a visit has a report link (token), creating one if needed. */
 export async function ensureReportLink(visitId: string, labId: string) {
@@ -129,6 +130,10 @@ export async function reportUrl(token: string, labId?: string) {
 }
 
 async function trySendReportReadySms(visitId: string, token: string, manual = false, sentBy?: string) {
+  // Both channels dormant — skip the four lookups this needs (visit, patient,
+  // lab, link base) rather than gathering data for a message nobody sends.
+  if (!MESSAGING_ENABLED) return;
+
   const visit = (await db.select().from(visits).where(eq(visits.id, visitId))).at(0);
   if (!visit) return;
   const patient = (await db.select().from(patients).where(eq(patients.id, visit.patientId))).at(0);
@@ -138,7 +143,7 @@ async function trySendReportReadySms(visitId: string, token: string, manual = fa
   const url = await reportUrl(token, visit.labId);
 
   // SMS (if phone present)
-  if (patient.phone) {
+  if (SMS_ENABLED && patient.phone) {
     await sendSms({
       labId: visit.labId,
       toPhone: patient.phone,
@@ -149,7 +154,7 @@ async function trySendReportReadySms(visitId: string, token: string, manual = fa
     });
   }
   // Email (if email present)
-  if (patient.email) {
+  if (EMAIL_ENABLED && patient.email) {
     const { subject, html } = reportReadyEmail(patient.fullName, labName, url);
     await sendEmail({
       labId: visit.labId,
@@ -165,6 +170,7 @@ async function trySendReportReadySms(visitId: string, token: string, manual = fa
 
 /** Manually (re)send the report SMS — used by dispatch "resend". */
 export async function resendReportSms(visitId: string, sentBy?: string) {
+  if (!SMS_ENABLED) return { ok: false as const, error: "SMS is not enabled for this laboratory." };
   const link = (await db.select().from(reportLinks).where(eq(reportLinks.visitId, visitId))).at(0);
   if (!link || !link.isActive) return { ok: false as const, error: "Report is not ready to share yet." };
   await trySendReportReadySms(visitId, link.token, true, sentBy);
@@ -173,6 +179,7 @@ export async function resendReportSms(visitId: string, sentBy?: string) {
 
 /** Manually send the report link by email — used by dispatch "email". */
 export async function sendReportEmail(visitId: string, sentBy?: string) {
+  if (!EMAIL_ENABLED) return { ok: false as const, error: "Email is not enabled for this laboratory." };
   const link = (await db.select().from(reportLinks).where(eq(reportLinks.visitId, visitId))).at(0);
   if (!link || !link.isActive) return { ok: false as const, error: "Report is not ready to share yet." };
   const visit = (await db.select().from(visits).where(eq(visits.id, visitId))).at(0);

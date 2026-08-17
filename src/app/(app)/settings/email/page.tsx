@@ -9,6 +9,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { StatusChip } from "@/components/ui/status-chip";
 import { EmptyState } from "@/components/ui/feedback";
 import { fmtDateTime } from "@/lib/datetime";
+import { EMAIL_ENABLED } from "@/lib/messaging";
 import { EmailTest } from "./email-test";
 
 export const metadata = { title: "Email" };
@@ -17,7 +18,7 @@ export default async function EmailSettingsPage() {
   const me = await requirePermission(PERMISSIONS.SETTINGS_MANAGE);
   const provider = process.env.EMAIL_PROVIDER || "mock";
   const from = process.env.EMAIL_FROM || "Nidanyo <no-reply@nidanyo.local>";
-  const configured = provider !== "mock";
+  const configured = EMAIL_ENABLED;
   const logs = await db.select().from(emailLogs).where(eq(emailLogs.labId, me.labId)).orderBy(desc(emailLogs.createdAt)).limit(25);
 
   return (
@@ -33,14 +34,14 @@ export default async function EmailSettingsPage() {
           </div>
           {!configured ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Email is in preview mode — messages are logged but not delivered. To enable real email, set an email provider (Resend, SendGrid, or a custom endpoint) in your environment configuration and restart the app.
+              Email is turned off. Nothing is sent to patients and no new entries are recorded below. Past messages are kept. To turn it on, set an email provider (Resend, SendGrid, or a custom endpoint) in your environment configuration and restart the app.
             </p>
           ) : (
             <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
               Email is configured. Patients with an email address receive their report link automatically once the report is ready and paid.
             </p>
           )}
-          <EmailTest />
+          {configured && <EmailTest />}
         </CardContent>
       </Card>
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/db/client";
 import { emailLogs } from "@/db/schema";
+import { EMAIL_ENABLED } from "@/lib/messaging";
 
 /**
  * Email adapter — provider-agnostic, mirrors the SMS adapter. Every send is
@@ -91,6 +92,10 @@ export async function sendEmail(params: {
   visitId?: string;
   sentBy?: string;
 }): Promise<EmailResult> {
+  // Dormant: no provider call, no email_logs row. Existing history is untouched.
+  // See src/lib/messaging.ts to re-enable.
+  if (!EMAIL_ENABLED) return { ok: false, error: "Email is not enabled for this laboratory." };
+
   const { labId, toEmail, subject, html, purpose = "other", visitId, sentBy } = params;
   const result = await deliver(toEmail, subject, html);
   try {

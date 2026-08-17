@@ -4,10 +4,17 @@ import { db } from "@/db/client";
 import { labs, labSettings, labAssets } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
+/**
+ * Lab profile + settings. Runs on every app page via the layout, so the two
+ * independent lookups go out as one libSQL batch (a single HTTP request)
+ * rather than two sequential round trips. `cache` still dedupes it per request.
+ */
 export const getLab = cache(async (labId: string) => {
-  const lab = (await db.select().from(labs).where(eq(labs.id, labId))).at(0);
-  const settings = (await db.select().from(labSettings).where(eq(labSettings.labId, labId))).at(0);
-  return { lab, settings };
+  const [labRows, settingRows] = await db.batch([
+    db.select().from(labs).where(eq(labs.id, labId)),
+    db.select().from(labSettings).where(eq(labSettings.labId, labId)),
+  ]);
+  return { lab: labRows.at(0), settings: settingRows.at(0) };
 });
 
 /** Resolve the active asset url for a given kind (header/footer/logo). */

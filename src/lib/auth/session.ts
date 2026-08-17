@@ -94,17 +94,35 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   try {
     const { payload } = await jwtVerify(token, secret());
     const sid = payload.sid as string;
-    const session = (await db.select().from(sessions).where(eq(sessions.id, sid))).at(0);
-    if (!session || session.expiresAt.getTime() < Date.now()) return null;
 
-    const user = (await db.select().from(users).where(eq(users.id, session.userId))).at(0);
+    // One round trip instead of four. Every hop here is a primary-key lookup
+    // that hangs off the session row (session → user → role, plus the lab's
+    // calendar preference), so they resolve as a single join rather than four
+    // sequential requests to Turso. The joins are LEFT so a missing role or
+    // lab_settings row behaves exactly as before — roleName falls back to the
+    // user's roleKey, permissions to none, calendar to AD.
+    const row = (
+      await db
+        .select({
+          expiresAt: sessions.expiresAt,
+          user: users,
+          roleName: roles.name,
+          rolePermissions: roles.permissions,
+          calendarSystem: labSettings.calendarSystem,
+        })
+        .from(sessions)
+        .innerJoin(users, eq(users.id, sessions.userId))
+        .leftJoin(roles, eq(roles.id, users.roleId))
+        .leftJoin(labSettings, eq(labSettings.labId, users.labId))
+        .where(eq(sessions.id, sid))
+    ).at(0);
+
+    if (!row || row.expiresAt.getTime() < Date.now()) return null;
+    const user = row.user;
     if (!user || !user.isActive) return null;
 
-    const role = (await db.select().from(roles).where(eq(roles.id, user.roleId))).at(0);
-
     // Set the ambient display calendar (AD/BS) for this request from the lab setting.
-    const setting = (await db.select({ cal: labSettings.calendarSystem }).from(labSettings).where(eq(labSettings.labId, user.labId))).at(0);
-    setServerCalendar((setting?.cal as "AD" | "BS") ?? "AD");
+    setServerCalendar((row.calendarSystem as "AD" | "BS") ?? "AD");
 
     return {
       id: user.id,
@@ -112,9 +130,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       name: user.name,
       email: user.email,
       roleKey: user.roleKey,
-      roleName: role?.name ?? user.roleKey,
+      roleName: row.roleName ?? user.roleKey,
       designation: user.designation ?? null,
-      permissions: (role?.permissions ?? []) as PermissionKey[],
+      permissions: (row.rolePermissions ?? []) as PermissionKey[],
     };
   } catch {
     return null;

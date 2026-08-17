@@ -2,7 +2,7 @@ import Link from "next/link";
 import { FileText, Printer, Eye, Lock } from "lucide-react";
 import { requirePermission, hasPermission } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/rbac/permissions";
-import { listReports } from "@/lib/queries/dispatch";
+import { listReports, REPORTS_PAGE_LIMIT } from "@/lib/queries/dispatch";
 import { getLab } from "@/lib/queries/lab";
 import { PageHeader } from "@/components/ui/page";
 import { SearchBar } from "@/components/ui/search-bar";
@@ -25,7 +25,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // Default to today's reports when browsing; a search spans all dates unless a range is set.
   const from = typeof sp.from === "string" ? sp.from : q ? undefined : todayISO();
   const to = typeof sp.to === "string" ? sp.to : q ? undefined : todayISO();
-  const [rows, { settings }] = await Promise.all([
+  const [{ rows, hasMore }, { settings }] = await Promise.all([
     // includePartial: also surface visits with at least one approved test (not
     // fully done yet) so the completed tests can be printed and handed over.
     listReports(user.labId, { q, status: "all", from, to, includePartial: true }),
@@ -42,6 +42,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <SearchBar placeholder="Search visit, patient or phone…" />
         <DateRangeFilter cal={(settings?.calendarSystem as "AD" | "BS") ?? "AD"} />
       </div>
+
+      {hasMore && (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Showing the {REPORTS_PAGE_LIMIT} most recently updated reports. Narrow the date range or search to see the rest.
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <EmptyState icon={FileText} title="No reports yet" description="Approved reports will appear here." />

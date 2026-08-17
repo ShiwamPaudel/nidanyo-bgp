@@ -15,11 +15,17 @@ export function DispatchActions({
   token,
   hasEmail,
   hasPhone,
+  smsEnabled,
+  emailEnabled,
 }: {
   visitId: string;
   token: string | null;
   hasEmail: boolean;
   hasPhone: boolean;
+  /** SMS channel live for this lab — see src/lib/messaging.ts. */
+  smsEnabled: boolean;
+  /** Email channel live for this lab — see src/lib/messaging.ts. */
+  emailEnabled: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -50,7 +56,7 @@ export function DispatchActions({
           <Printer className="size-4" />
         </a>
       )}
-      {hasPhone && (
+      {smsEnabled && hasPhone && (
         <Button size="sm" variant="outline" onClick={sms} loading={pending} title="Resend SMS">
           <MessageSquare className="size-4" />
         </Button>
@@ -63,8 +69,10 @@ export function DispatchActions({
         <div className="grid grid-cols-2 gap-2">
           <DispatchBtn icon={Printer} label="Printed" onClick={() => mark("printed")} disabled={pending} />
           <DispatchBtn icon={UserCheck} label="Collected" onClick={() => mark("collected")} disabled={pending} />
-          <DispatchBtn icon={MessageSquare} label="Sent by SMS" onClick={() => mark("sms")} disabled={pending || !hasPhone} />
-          <DispatchBtn icon={Mail} label="Sent by email" onClick={() => mark("email")} disabled={pending || !hasEmail} />
+          {/* SMS / email appear only when that channel is actually live, so
+              nobody records a delivery the system cannot perform. */}
+          {smsEnabled && <DispatchBtn icon={MessageSquare} label="Sent by SMS" onClick={() => mark("sms")} disabled={pending || !hasPhone} />}
+          {emailEnabled && <DispatchBtn icon={Mail} label="Sent by email" onClick={() => mark("email")} disabled={pending || !hasEmail} />}
           <DispatchBtn icon={Download} label="Downloaded" onClick={() => mark("downloaded")} disabled={pending} />
         </div>
       </Modal>

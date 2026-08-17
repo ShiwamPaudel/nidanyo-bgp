@@ -121,6 +121,20 @@ export const resultEntries = sqliteTable(
   (t) => ({
     visitIdx: index("result_entries_visit_idx").on(t.visitId),
     statusIdx: index("result_entries_status_idx").on(t.status),
+    // (visit_id, status) — the report/dispatch read path asks "does this visit
+    // have an approved entry?" once per visit row. With only the two
+    // single-column indexes above, SQLite picked the status one, which matches
+    // ~94% of the table (nearly every entry ends up 'approved'), so each check
+    // scanned most of result_entries. Cost was O(visits × entries); this makes
+    // it a direct two-column seek.
+    visitStatusIdx: index("result_entries_visit_status_idx").on(t.visitId, t.status),
+    // (lab_id, status) — serves the sidebar badge and dashboard "pending /
+    // awaiting approval" counts as a COVERING index, so those run on every
+    // page load without touching the table itself.
+    // (It does not help the dashboard's critical-alerts widget, which still
+    // scans: that query filters only on lab_id, and with a single lab that
+    // matches every row, so a scan is genuinely the cheapest plan.)
+    labStatusIdx: index("result_entries_lab_status_idx").on(t.labId, t.status),
   }),
 );
 

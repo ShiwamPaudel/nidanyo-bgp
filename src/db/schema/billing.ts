@@ -50,6 +50,15 @@ export const visits = sqliteTable(
     labCodeIdx: index("visits_lab_code_idx").on(t.labId, t.code),
     patientIdx: index("visits_patient_idx").on(t.patientId),
     statusIdx: index("visits_status_idx").on(t.status),
+    // (lab_id, status, updated_at) — the dispatch queue is "approved visits,
+    // newest first". Without this it scanned every visit for the lab and then
+    // sorted the survivors in a temp b-tree; now it seeks the status and walks
+    // updated_at in order, stopping at the limit. Also serves the sidebar
+    // badge and dashboard "ready to dispatch" counts.
+    labStatusUpdatedIdx: index("visits_lab_status_updated_idx").on(t.labId, t.status, t.updatedAt),
+    // (lab_id, visit_date) — visit lists and the dashboard's day/hour buckets
+    // all filter or order on visit_date.
+    labVisitDateIdx: index("visits_lab_visit_date_idx").on(t.labId, t.visitDate),
   }),
 );
 

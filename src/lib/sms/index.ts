@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/db/client";
 import { smsLogs } from "@/db/schema";
+import { SMS_ENABLED } from "@/lib/messaging";
 
 /**
  * SMS adapter — provider-agnostic. Every send is logged to sms_logs with its
@@ -98,6 +99,10 @@ export async function sendSms(params: {
   visitId?: string;
   sentBy?: string;
 }): Promise<SmsResult> {
+  // Dormant: no provider call, no sms_logs row, no console noise. Existing log
+  // history stays exactly as it is. See src/lib/messaging.ts to re-enable.
+  if (!SMS_ENABLED) return { ok: false, error: "SMS is not enabled for this laboratory." };
+
   const { labId, toPhone, body, purpose = "other", visitId, sentBy } = params;
   const result = await deliver(toPhone, body);
   try {

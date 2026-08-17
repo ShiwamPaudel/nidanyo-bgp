@@ -26,7 +26,8 @@ export const reportLinks = sqliteTable(
     ...timestamps,
   },
   (t) => ({
-    tokenIdx: index("report_links_token_idx").on(t.token),
+    // No separate index on `token`: the .unique() above already creates one
+    // (report_links_token_unique), so a second was pure write overhead.
     visitIdx: index("report_links_visit_idx").on(t.visitId),
   }),
 );
