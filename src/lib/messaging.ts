@@ -15,7 +15,7 @@
  * environment — e.g. SMS_PROVIDER=sparrow, EMAIL_PROVIDER=resend. No code
  * change is needed; every call site below re-activates on its own.
  */
-
+/* TEst fr Commit */
 const DORMANT = new Set(["", "mock", "off", "none", "disabled"]);
 
 function live(provider: string | undefined): boolean {
