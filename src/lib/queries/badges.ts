@@ -2,11 +2,12 @@ import "server-only";
 import { db } from "@/db/client";
 import { visits, bills, samples, resultEntries } from "@/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
+import { CACHE_TAGS, CACHE_TTL } from "@/lib/cache";
 
-/** Sidebar badge counts for pending work in each queue. */
-export async function getNavBadges(labId: string): Promise<Record<string, number>> {
+async function computeNavBadges(labId: string): Promise<Record<string, number>> {
   // Five independent counts sent as a single libSQL batch (one HTTP request)
-  // rather than five separate round-trips. Runs on every app page (layout).
+  // rather than five separate round-trips.
   const [dues, samplesWaiting, resultsPending, approvalPending, dispatchReady] = await db.batch([
     db
       .select({ n: sql<number>`count(*)` })
@@ -38,3 +39,21 @@ export async function getNavBadges(labId: string): Promise<Record<string, number
     dispatch: Number(dispatchReady[0]?.n ?? 0),
   };
 }
+
+/**
+ * Sidebar badge counts for pending work in each queue.
+ *
+ * This runs in the app layout, i.e. on EVERY page load, and the dues count
+ * alone reads every bill for the lab — so uncached it was one of the largest
+ * consumers of Turso row-reads in the system. The numbers are a hint ("there
+ * is work over there"), not a record: the queues themselves are never cached,
+ * so acting on a badge always lands on live data.
+ *
+ * Cached for a minute, and flushed after any successful server action, so your
+ * own work shows up immediately and only other people's changes can be up to a
+ * minute late.
+ */
+export const getNavBadges = unstable_cache(computeNavBadges, ["nav-badges"], {
+  revalidate: CACHE_TTL.ops,
+  tags: [CACHE_TAGS.ops],
+});

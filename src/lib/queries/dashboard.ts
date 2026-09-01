@@ -13,8 +13,10 @@ import {
 } from "@/db/schema";
 import { and, eq, gte, lte, sql, desc, ne } from "drizzle-orm";
 import { dayBounds, labYmd, labDayBounds, labDaysAgo } from "@/lib/datetime";
+import { unstable_cache } from "next/cache";
+import { CACHE_TAGS, CACHE_TTL } from "@/lib/cache";
 
-export async function getDashboardStats(labId: string) {
+async function computeDashboardStats(labId: string) {
   const { start, end } = dayBounds();
   const s = Math.floor(start.getTime() / 1000);
   const e = Math.floor(end.getTime() / 1000);
@@ -82,7 +84,7 @@ export async function getDashboardStats(labId: string) {
 }
 
 /** Revenue collected per day for the last N days (lab-local days). */
-export async function getRevenueTrend(labId: string, days = 14) {
+async function computeRevenueTrend(labId: string, days = 14) {
   // Walk back N lab-local days and start at that day's local midnight.
   const todayYmd = labYmd(new Date());
   const anchor = Date.UTC(todayYmd.y, todayYmd.m - 1, todayYmd.d);
@@ -128,7 +130,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * member analytes; standalone tests count on their own. "Count" is distinct
  * visits the item was performed in.
  */
-export async function getTopTests(labId: string, limit = 6) {
+async function computeTopTests(labId: string, limit = 6) {
   const keyExpr = sql`coalesce(${visitTests.groupId}, ${visitTests.testId})`;
   const rows = await db
     .select({
@@ -146,7 +148,7 @@ export async function getTopTests(labId: string, limit = 6) {
 }
 
 /** Collection split by payment mode category for today. */
-export async function getCollectionByMode(labId: string) {
+async function computeCollectionByMode(labId: string) {
   const { start, end } = dayBounds();
   const s = Math.floor(start.getTime() / 1000);
   const e = Math.floor(end.getTime() / 1000);
@@ -160,7 +162,7 @@ export async function getCollectionByMode(labId: string) {
 }
 
 /** Visit volume by hour of day (busiest hours) over the last N days. */
-export async function getPeakHours(labId: string, days = 30) {
+async function computePeakHours(labId: string, days = 30) {
   const since = labDaysAgo(days);
   const rows = await db
     .select({
@@ -185,7 +187,7 @@ export async function getPeakHours(labId: string, days = 30) {
 }
 
 /** Revenue (billed) grouped by referring doctor over the last N days. */
-export async function getRevenueByDoctor(labId: string, days = 30, limit = 8) {
+async function computeRevenueByDoctor(labId: string, days = 30, limit = 8) {
   const since = labDaysAgo(days);
   const rows = await db
     .select({
@@ -229,3 +231,55 @@ export async function getCriticalAlerts(labId: string, limit = 6) {
     .orderBy(desc(resultValues.createdAt))
     .limit(limit);
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Cached entry points.
+ *
+ * Every dashboard widget below is a glance, not a ledger — the authoritative
+ * money screens (Transactions, Financial Reports, Dues) read straight from the
+ * database and are never cached. See src/lib/cache.ts for the policy.
+ *
+ * `getRecentActivity` and `getCriticalAlerts` are intentionally left uncached:
+ * they read a handful of indexed rows, so there is nothing to save.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** Today's counters + outstanding dues. Flushed after any successful action. */
+export const getDashboardStats = unstable_cache(computeDashboardStats, ["dashboard-stats"], {
+  revalidate: CACHE_TTL.ops,
+  tags: [CACHE_TAGS.ops],
+});
+
+/** Collected per day, last N days. Flushed when money moves. */
+export const getRevenueTrend = unstable_cache(computeRevenueTrend, ["revenue-trend"], {
+  revalidate: CACHE_TTL.ops,
+  tags: [CACHE_TAGS.ops],
+});
+
+/** Today's collection split by payment mode. Flushed when money moves. */
+export const getCollectionByMode = unstable_cache(computeCollectionByMode, ["collection-by-mode"], {
+  revalidate: CACHE_TTL.ops,
+  tags: [CACHE_TAGS.ops],
+});
+
+/**
+ * Most performed tests, all time. The heaviest dashboard query by far — it
+ * scans every visit_test the lab has ever recorded and grows forever — and the
+ * answer cannot meaningfully change within a working day, so it gets the
+ * longest window. Time-based only: flushing it per action would defeat it.
+ */
+export const getTopTests = unstable_cache(computeTopTests, ["top-tests"], {
+  revalidate: CACHE_TTL.topTests,
+  tags: [CACHE_TAGS.trends],
+});
+
+/** Visit volume by hour over the last 30 days. A shape, not a number. */
+export const getPeakHours = unstable_cache(computePeakHours, ["peak-hours"], {
+  revalidate: CACHE_TTL.peakHours,
+  tags: [CACHE_TAGS.trends],
+});
+
+/** Billed revenue by referring doctor over the last 30 days. */
+export const getRevenueByDoctor = unstable_cache(computeRevenueByDoctor, ["revenue-by-doctor"], {
+  revalidate: CACHE_TTL.revenueByDoctor,
+  tags: [CACHE_TAGS.trends],
+});

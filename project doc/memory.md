@@ -342,10 +342,15 @@ Performance refactor only; no business logic, statuses, billing or auth behaviou
    date-bounded reports, peak hours), `patients(lab_id, is_active, created_at)` (patient
    list — sort gone). Dropped `report_links_token_idx`, a duplicate of the index the
    `token` unique constraint already creates.
-   ⚠️ **Root cause worth remembering: production had NO `sqlite_stat1` — `ANALYZE` had
-   never been run**, so the planner was working from heuristics. Migration 0009 therefore
-   ends with `ANALYZE;`. Re-run `ANALYZE` after any future bulk import.
-   **Deploy step: apply migration 0009.**
+   ⚠️ **Turso rejects `ANALYZE` over its HTTP protocol** (`SQL_PARSE_ERROR: SQL not
+   allowed statement`), so production has no `sqlite_stat1` and cannot get one. A first
+   version of 0009 ended with `ANALYZE;` and the migration failed outright (cleanly — it
+   rolled back, nothing partially applied). **Never put `ANALYZE` in a migration.**
+   It turned out not to be needed: verified at production data shape that the composite
+   index wins on SQLite's heuristics alone, with no stats — same plan and same 11 ms as
+   the ANALYZE version. Note a local `file:` libSQL DB *does* allow `ANALYZE`, so local
+   migration tests can pass where Turso fails; test statement support against Turso.
+   **Applied to production 2026-09-01** (`__drizzle_migrations` = 10).
 
 2. **SMS and Email are now dormant** (`src/lib/messaging.ts`). The clinic uses neither.
    The switch is the *existing* `SMS_PROVIDER` / `EMAIL_PROVIDER` env vars — a channel is
@@ -388,3 +393,35 @@ and the status composite already covers the hot path); UNIQUE on `bills.visit_id
 integrity change with write-rejection risk, not a performance one — worth doing separately);
 FTS5 patient search (search measures at the ~48 ms network floor); keyset pagination
 (offset page 100 costs 6 ms more than page 1).
+
+### 2026-09-01 — Caching for the read-heavy glance queries
+Follow-on to the index work. Turso reads were still ~10M/day (89M peaks) because
+migration 0009 had not actually been applied; once it was, the remaining consumers were
+queries running on every page load. Policy lives in **`src/lib/cache.ts`**:
+**cache a hint, never a record.**
+
+- **Cached.** `getNavBadges` (runs in the app layout, i.e. every page; the dues count alone
+  read every bill) and the dashboard aggregates: `getDashboardStats`, `getRevenueTrend`,
+  `getCollectionByMode` at 60 s under tag `nidanyo:ops`; `getPeakHours` and
+  `getRevenueByDoctor` at 1 h and `getTopTests` at **6 h** under tag `nidanyo:trends`.
+  `getTopTests` gets the longest window because it aggregates ALL history (~15k rows and
+  growing forever) and "most performed test of all time" cannot change within a day.
+- **Invalidation is hooked once, in `run()` (`src/lib/action.ts`)** — every mutation in the
+  app funnels through it, so a successful action flushes `nidanyo:ops` and no future action
+  can forget to. Deliberately over-invalidates (cost: one recomputed count). The `trends`
+  tag is time-based only, or the long windows would be thrown away for no visible benefit.
+- **NOT cached, and must stay that way:** `getCurrentUser`/permissions (security boundary),
+  dues / transactions / finance / bills / payments (money, reconciled against cash at the
+  counter), and the result / approval / dispatch queues (two technicians must not pick up
+  the same visit from a stale list). Also skipped `getLab` and `getRecentActivity` — they
+  read 2 and 8 rows, so there is nothing to save and both return `Date` objects that a
+  cache round-trip would turn into strings.
+- `getCriticalAlerts` in `dashboard.ts` is **dead code** — defined, never imported. Its
+  full `SCAN` of `result_entries` therefore never runs. Left in place, untouched.
+- Verified end-to-end against a local build with temporary probes: 4 dashboard loads →
+  each query executed **once**; 12 assorted page loads → **zero** badge recomputes; all
+  12 pages HTTP 200 with no server errors.
+
+⚠️ Note for future local testing: `local.db` was a stale June snapshot and needed
+`DATABASE_URL="file:local.db" npx tsx db/migrate.ts` before the app would boot against it
+(dotenv does not override an existing env var, so that override is safe).

@@ -1,4 +1,6 @@
 import "server-only";
+import { revalidateTag } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * Standard server-action result. Never leak technical details to the UI —
@@ -20,10 +22,27 @@ export function fail(error: string, fieldErrors?: Record<string, string>): Actio
  * Wrap an action body so thrown errors become friendly messages. Known
  * (authorization/validation) errors pass through their message; unknown errors
  * surface a generic line and are logged for developers only.
+ *
+ * A successful action also flushes the cached operational counts (sidebar
+ * badges, today's dashboard figures) — see src/lib/cache.ts.
  */
 export async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   try {
-    return await fn();
+    const result = await fn();
+    // Every mutation in the app funnels through here, so this is the one place
+    // that cannot forget to flush the cached operational counts. Hooking it
+    // centrally (rather than per action) means a badge is never stale after
+    // work you just did, and a new action added later inherits it for free.
+    // Over-invalidating is deliberate: the cost is one recomputed count, and
+    // the alternative is a queue that silently disagrees with its badge.
+    if (result.ok) {
+      try {
+        revalidateTag(CACHE_TAGS.ops);
+      } catch {
+        /* outside a revalidatable context — the TTL still covers it */
+      }
+    }
+    return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     // Authorization / validation errors are safe to show.
